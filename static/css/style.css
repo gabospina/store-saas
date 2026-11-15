@@ -3416,3 +3416,12 @@ section.hero .hero-trust {
         justify-content: center;
     }
 }
+
+/* Email servcie send/reply */
+.res-btn-reply {
+    background: #003366;
+    color: #fff;
+}
+.res-btn-reply:hover {
+    background: #002244;
+}

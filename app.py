@@ -612,6 +612,10 @@ def ensure_reservations_schema():
         cursor.execute("ALTER TABLE reservations ADD COLUMN status TEXT DEFAULT 'new'")
     if "store_email_sent" not in cols:
         cursor.execute("ALTER TABLE reservations ADD COLUMN store_email_sent INTEGER DEFAULT 0")
+    if "store_reply" not in cols:
+        cursor.execute("ALTER TABLE reservations ADD COLUMN store_reply TEXT")
+    if "reply_sent_at" not in cols:
+        cursor.execute("ALTER TABLE reservations ADD COLUMN reply_sent_at TEXT")
     if "customer_email_sent" not in cols:
         cursor.execute("ALTER TABLE reservations ADD COLUMN customer_email_sent INTEGER DEFAULT 0")
 
@@ -693,6 +697,8 @@ def send_reservation_emails(tenant_id, reservation_id, customer_name, phone,
             </div>
             """
             msg = Message(subject=subject, recipients=[store_email], html=html)
+            if customer_email and "@" in customer_email:
+                msg.reply_to = customer_email
             mail.send(msg)
 
             conn = sqlite3.connect(DB_PATH)
@@ -1570,6 +1576,82 @@ def reservation_update_status(reservation_id, status):
     conn.close()
 
     flash(f"Reservation marked as {status}.")
+    return redirect("/reservations")
+
+
+@app.route("/reservations/<int:reservation_id>/reply", methods=["POST"])
+@login_required
+def reservation_reply(reservation_id):
+    tid = current_tenant_id()
+    subject = request.form.get("subject", "").strip()
+    message_body = request.form.get("message", "").strip()
+
+    if not subject or not message_body:
+        flash("Subject and message are required.")
+        return redirect("/reservations")
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, customer_name, email, inventory_id FROM reservations
+        WHERE id = ? AND tenant_id = ?
+    """, (reservation_id, tid))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        flash("Reservation not found.")
+        return redirect("/reservations")
+
+    customer_name, customer_email, inventory_id = row[1], row[2], row[3]
+
+    if not customer_email or "@" not in customer_email:
+        conn.close()
+        flash("This customer did not provide an email address. Use phone instead.")
+        return redirect("/reservations")
+
+    # Send the email
+    if mail_configured():
+        try:
+            info = get_tenant_business_info(tid) or {}
+            store_name = info.get("name", "Your Store")
+            store_email = info.get("email", "")
+
+            html = f"""
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+                <p>{message_body.replace(chr(10), '<br>')}</p>
+                <hr style="border:1px solid #eee;margin:24px 0;">
+                <p style="color:#666;font-size:13px;">
+                    <strong>{store_name}</strong><br>
+                    {info.get('phone', '')} · {store_email}
+                </p>
+            </div>
+            """
+            msg = Message(subject=subject, recipients=[customer_email], html=html)
+            if store_email and "@" in store_email:
+                msg.reply_to = store_email
+            mail.send(msg)
+        except Exception as e:
+            print(f"[MAIL] Reply send failed: {e}")
+            flash(f"Could not send email: {e}")
+            conn.close()
+            return redirect("/reservations")
+
+    # Save the reply + mark as contacted
+    cursor.execute("""
+        UPDATE reservations
+        SET store_reply = ?, reply_sent_at = ?, status = 'contacted'
+        WHERE id = ? AND tenant_id = ?
+    """, (
+        message_body,
+        datetime.now().strftime("%Y-%m-%d %H:%M"),
+        reservation_id,
+        tid,
+    ))
+    conn.commit()
+    conn.close()
+
+    flash(f"Reply sent to {customer_name}.")
     return redirect("/reservations")
 
 

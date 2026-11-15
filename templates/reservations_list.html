@@ -92,6 +92,17 @@
 
                     <div class="res-actions">
 
+                        {% if email %}
+                        <button type="button"
+                                class="res-btn res-btn-reply"
+                                data-res-id="{{ res_id }}"
+                                data-customer-name="{{ customer_name|e }}"
+                                data-customer-email="{{ email|e }}"
+                                data-product-name="{{ product_name|e }}">
+                            ✉️ Reply to Customer
+                        </button>
+                        {% endif %}
+
                         {% if status == 'new' %}
                             <form method="POST" action="/reservations/{{ res_id }}/status/contacted" class="inline-form">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -135,6 +146,69 @@
     {% endif %}
 
 </div>
+
+<!-- Reply modal -->
+<div id="replyModal" class="custom-modal" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width:560px;">
+        <button type="button" class="modal-close" onclick="closeReplyModal()">×</button>
+        <h2>Reply to Customer</h2>
+        <p id="replyTo" class="modal-subtitle"></p>
+        <form method="POST" id="replyForm" action="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="replySubject">Subject</label>
+            <input type="text" id="replySubject" name="subject" required>
+            <label for="replyMessage">Message</label>
+            <textarea id="replyMessage" name="message" rows="6" required
+                      style="width:100%;padding:10px;border:1px solid #ccd4dd;border-radius:6px;font-family:inherit;"></textarea>
+            <div class="modal-buttons">
+                <button type="button" class="cancel-btn" onclick="closeReplyModal()">Cancel</button>
+                <button type="submit" class="confirm-btn">Send Reply</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openReplyModal(resId, customerName, customerEmail, productName) {
+    var modal = document.getElementById("replyModal");
+    document.getElementById("replyTo").textContent = "To: " + customerName + " <" + customerEmail + ">";
+    document.getElementById("replySubject").value = "Re: Your reservation for " + productName;
+    document.getElementById("replyMessage").value =
+        "Hi " + customerName + ",\n\n" +
+        "Thank you for your reservation. \n\n" +
+        "[Your message here]\n\n" +
+        "Best regards";
+    document.getElementById("replyForm").action = "/reservations/" + resId + "/reply";
+    modal.style.display = "flex";
+    document.body.classList.add("modal-open");
+    setTimeout(function () { document.getElementById("replyMessage").focus(); }, 100);
+}
+
+function closeReplyModal() {
+    document.getElementById("replyModal").style.display = "none";
+    document.body.classList.remove("modal-open");
+}
+
+// Attach click handlers to all Reply buttons
+document.querySelectorAll('.res-btn-reply').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        openReplyModal(
+            btn.dataset.resId,
+            btn.dataset.customerName,
+            btn.dataset.customerEmail,
+            btn.dataset.productName
+        );
+    });
+});
+
+document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeReplyModal();
+});
+
+document.getElementById("replyModal").addEventListener("click", function (e) {
+    if (e.target === this) closeReplyModal();
+});
+</script>
 
 </body>
 </html>
