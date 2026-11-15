@@ -172,8 +172,6 @@ def _enforce_site_mode():
             # Backward compat: /business-demo → /
             return redirect("/")
 
-    return None
-
 
 # ---------------------------------------------------------------
 # PHASE 5 — SECURITY HEADERS
@@ -902,6 +900,16 @@ def get_tenant_whatsapp(tenant_id):
     cleaned = "".join(c for c in raw if c.isdigit() or c == "+")
     return cleaned
 
+def get_storefront_url(tenant_id):
+    """Return the correct storefront URL for a tenant."""
+    if not IS_SAAS_SITE:
+        return "/"
+    if tenant_id == 1:
+        return "/royal-home"
+    elif tenant_id == 2:
+        return "/clothing-demo"
+    return "/"
+
 
 def set_tenant(tid):
     """Set the current session's tenant. Also updates session.permanent."""
@@ -1337,15 +1345,11 @@ def login():
 
 @app.route("/reserve_appliance/<int:item_id>")
 def reserve(item_id):
-    
+    """Reservation form — works for any tenant's product."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM inventory WHERE id=? AND tenant_id=1",
-        (item_id,),
-    )
+    cursor.execute("SELECT * FROM inventory WHERE id = ?", (item_id,))
     item = cursor.fetchone()
-
     conn.close()
 
     if not item:
@@ -2701,6 +2705,45 @@ def royal_home_preview():
     # so both get the same schema, WhatsApp config, and inventory list.
     return _render_royal_home_storefront()
 
+@app.route("/clothing-demo")
+def clothing_demo_preview():
+    """Clothing Demo tenant storefront preview — accessible from the SaaS landing page."""
+    tenant_id = 2  # Clothing Demo tenant
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT *
+        FROM inventory
+        WHERE status='Available'
+          AND tenant_id = ?
+        ORDER BY id DESC
+        LIMIT 12
+    """, (tenant_id,))
+    inventory = cursor.fetchall()
+
+    cursor.execute(
+        "SELECT id, slug, name, business_type FROM tenants WHERE id = ?",
+        (tenant_id,)
+    )
+    tenant = cursor.fetchone()
+    conn.close()
+
+    if not tenant:
+        return render_template("404.html"), 404
+
+    base_url = get_base_url()
+    local_schema = build_local_business_schema(tenant_id, base_url)
+
+    return render_template(
+        "storefront_clothing.html",                 # ← CHANGED template
+        inventory=inventory,
+        whatsapp_number=get_tenant_whatsapp(tenant_id),
+        tenant_name=tenant[2],
+        local_schema=local_schema,
+        base_url=base_url,
+    )
+
 
 @app.route("/product/<int:item_id>")
 def product_detail(item_id):
@@ -2780,6 +2823,7 @@ def product_detail(item_id):
         canonical_url=canonical_url,
         local_schema=local_schema,
         product_schema=product_schema,
+        storefront_url=get_storefront_url(tenant_id),
     )
 
 

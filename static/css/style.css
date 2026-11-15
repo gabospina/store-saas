@@ -3425,3 +3425,130 @@ section.hero .hero-trust {
 .res-btn-reply:hover {
     background: #002244;
 }
+
+/* =============================================================
+   LIVE STORES — direct links to real storefronts
+   ============================================================= */
+
+.live-stores {
+    padding: 60px 10% 80px;
+    background: #f7f9fc;
+}
+
+.live-stores-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 28px;
+    max-width: 1000px;
+    margin: 32px auto 0;
+}
+
+.live-store-card {
+    display: block;
+    background: #fff;
+    border: 1px solid #e5eaf0;
+    border-radius: 14px;
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.live-store-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+    border-color: #ff6600;
+}
+
+.live-store-card-img {
+    width: 100%;
+    height: 220px;
+    overflow: hidden;
+    background: #eef2f7;
+}
+
+.live-store-card-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+}
+
+.live-store-card:hover .live-store-card-img img {
+    transform: scale(1.05);
+}
+
+.live-store-card-content {
+    padding: 22px 24px 26px;
+}
+
+.live-store-badge {
+    display: inline-block;
+    background: #003366;
+    color: #fff;
+    padding: 3px 12px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.live-store-card-content h3 {
+    margin: 0 0 8px;
+    font-size: 1.25rem;
+    color: #003366;
+}
+
+.live-store-card-content p {
+    margin: 0 0 16px;
+    color: #555;
+    font-size: 0.92rem;
+    line-height: 1.55;
+}
+
+.live-store-link {
+    display: inline-block;
+    color: #ff6600;
+    font-weight: 700;
+    font-size: 0.95rem;
+    transition: gap 0.15s;
+}
+
+.live-store-card:hover .live-store-link {
+    color: #e65c00;
+}
+
+@media (max-width: 640px) {
+    .live-stores {
+        padding: 40px 5% 60px;
+    }
+    .live-store-card-img {
+        height: 180px;
+    }
+}
+
+/* Royal Home "Visit Us" section — blue background to match the contact section */
+.visit-us {
+    background: #003366;
+    color: #ffffff;
+}
+
+.visit-us .section-title,
+.visit-us h3,
+.visit-us .store-brand h3 {
+    color: #c41111;
+}
+
+
+
+.visit-us-subtitle {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* .visit-us .hours-line em {
+    color: #ff9999;
+} */

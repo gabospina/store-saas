@@ -25,6 +25,8 @@
             <li><a href="#features">Features</a></li>
             <li><a href="#samples">Examples</a></li>
             <li><a href="#faq">FAQ</a></li>
+            <li><a href="/royal-home">Royal Home</a></li>
+            <li><a href="/clothing-demo">Clothing Demo</a></li>
             <li><a href="/demo-login" class="nav-demo-link">Try Live Demo</a></li>
             <li><button type="button" class="nav-store-login-btn" onclick="openStoreLogin()">Store Owner Login</button></li>
         </ul>
@@ -156,6 +158,45 @@
         </div>
     </div>
 </section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- LIVE STORES — direct links to real storefronts             -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section id="live-stores" class="live-stores">
+    <h2 class="section-title">See Live Stores in Action</h2>
+    <p class="section-subtitle">Click to visit the storefronts of real businesses running on Store-SaaS.</p>
+
+    <div class="live-stores-grid">
+
+        <!-- Royal Home -->
+        <a href="/royal-home" class="live-store-card">
+            <div class="live-store-card-img">
+                <img src="{{ url_for('static', filename='images/refrigerator.jpg') }}" alt="Royal Home appliance store">
+            </div>
+            <div class="live-store-card-content">
+                <span class="live-store-badge">Appliance Store</span>
+                <h3>The Royal Home</h3>
+                <p>Discount appliance outlet serving the West Island of Montreal. Refrigerators, washers, dryers, and more.</p>
+                <span class="live-store-link">Visit store →</span>
+            </div>
+        </a>
+
+        <!-- Clothing Demo -->
+        <a href="/clothing-demo" class="live-store-card">
+            <div class="live-store-card-img">
+                <img src="{{ url_for('static', filename='images/clothing-store.png') }}" alt="Clothing demo store">
+            </div>
+            <div class="live-store-card-content">
+                <span class="live-store-badge">Clothing Store</span>
+                <h3>Clothing Demo Boutique</h3>
+                <p>Sample clothing storefront — blouses, dresses, and everyday fashion at discount prices.</p>
+                <span class="live-store-link">Visit store →</span>
+            </div>
+        </a>
+
+    </div>
+</section>
+
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- TESTIMONIALS                                                -->
@@ -346,8 +387,8 @@
     var mapEl = document.getElementById("demoMap");
     if (mapEl && typeof L !== "undefined") {
         var map = L.map("demoMap", {
-            scrollWheelZoom: false,
-            zoomControl: false,
+            scrollWheelZoom: true,
+            zoomControl: true,
             attributionControl: true,
         }).setView([AREA_LAT, AREA_LNG], 12);
 

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ tenant_name }} — Discount Clothing Store</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="">
+
+    {% if local_schema %}
+    <script type="application/ld+json">
+    {{ local_schema|tojson }}
+    </script>
+    {% endif %}
+</head>
+<body>
+
+<header>
+    <nav>
+        <div class="logo">{{ tenant_name }}</div>
+        <ul>
+            <li><a href="#about">About</a></li>
+            <li><a href="#products">Products</a></li>
+            <li><a href="#contact">Contact</a></li>
+            <li><a href="/store-saas">← Back to Store-SaaS</a></li>
+        </ul>
+    </nav>
+</header>
+
+<section class="hero">
+    <img src="{{ url_for('static', filename='images/clothing-rack-looking-3.png') }}" alt="{{ tenant_name }} — discount clothing">
+    <div class="hero-content">
+        <h1>Affordable Fashion for Everyone</h1>
+        <p>
+            Quality clothing at discount prices.
+            Blouses, dresses, and everyday basics for the whole family.
+        </p>
+        <a href="#products" class="btn">Browse Our Collection</a>
+    </div>
+</section>
+
+<section id="about" class="about">
+    <h2 class="section-title">About {{ tenant_name }}</h2>
+    <p class="about-text">
+        We believe great style shouldn't break the bank. {{ tenant_name }} offers
+        carefully selected clothing at prices that make sense — whether you're
+        refreshing your wardrobe, shopping for the season, or just looking for
+        a great everyday piece. Every item is inspected for quality before it
+        reaches our shelves.
+    </p>
+</section>
+
+<section id="products">
+    <h2 class="section-title">Our Collection</h2>
+
+    {% if inventory %}
+    <div class="gallery">
+        {% for item in inventory %}
+        <div class="inventory-card">
+            {% if item[7] and item[7] != 'no-image.png' %}
+                <img src="{{ url_for('static', filename='images/uploads/' + item[7]) }}"
+                     alt="{{ item[1] }}">
+            {% else %}
+                <img src="{{ url_for('static', filename='images/no-image.png') }}"
+                     alt="{{ item[1] }}">
+            {% endif %}
+            <h3>{{ item[1] }}</h3>
+            <p class="price">${{ '%.2f'|format(item[4] or 0) }}</p>
+            <a href="/product/{{ item[0] }}" class="inventory-btn">View Details</a>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>New arrivals coming soon! Check back shortly.</p>
+        <p style="font-size:0.9rem;color:#888;">(Demo storefront — sample products are being uploaded.)</p>
+    </div>
+    {% endif %}
+</section>
+
+<section class="testimonials">
+    <h2 class="section-title">Why Shop With Us</h2>
+    <div class="features">
+        <div class="feature-box">
+            <h3>💎 Quality Selection</h3>
+            <p>Every piece is inspected before it reaches our racks. No surprises.</p>
+        </div>
+        <div class="feature-box">
+            <h3>💰 Discount Prices</h3>
+            <p>Great fashion doesn't need a luxury price tag. Save on every purchase.</p>
+        </div>
+        <div class="feature-box">
+            <h3>📱 Shop From Home</h3>
+            <p>Browse online, reserve items, and pick them up at your convenience.</p>
+        </div>
+    </div>
+</section>
+
+<section class="contact" id="contact">
+    <h2 class="section-title" style="color:#fff;">Visit or Contact Us</h2>
+    <div class="contact-details">
+        <h3>We'd Love to See You</h3>
+        <p>Come browse our latest arrivals or reserve an item online for pickup.</p>
+        <a href="tel:{{ whatsapp_number or '' }}" class="btn">Call Us</a>
+    </div>
+
+    <!-- Map: approximate service area, Hwy 40 & St. Jean -->
+    <div class="demo-location">
+        <h3 class="demo-location-title">Located in the West Island of Montreal</h3>
+        <p class="demo-location-subtitle">Serving customers across the greater Montreal area.</p>
+        <div id="storeMap" class="demo-map" role="img"
+             aria-label="Approximate service area — West Island of Montreal"></div>
+        <p class="demo-location-note">📍 Approximate service area — visit us in-store for our full collection</p>
+    </div>
+</section>
+
+<footer>
+    <p>© 2026 {{ tenant_name }}. All rights reserved. · Powered by Store-SaaS.</p>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+
+<script>
+(function () {
+    var mapEl = document.getElementById('storeMap');
+    if (!mapEl || typeof L === 'undefined') {
+        console.error('Map init failed: Leaflet not loaded or #storeMap not found');
+        return;
+    }
+
+    // Hwy 40 & St. Jean Boulevard — approximate West Island service area
+    var STORE_LAT = 45.4692;
+    var STORE_LNG = -73.8321;
+    var RADIUS_METERS = 4500;
+
+    var map = L.map('storeMap', {
+        scrollWheelZoom: true,      // ← enabled by default
+        zoomControl: true,          // ← +/- buttons visible
+    }).setView([STORE_LAT, STORE_LNG], 12);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+
+    L.circle([STORE_LAT, STORE_LNG], {
+        radius: RADIUS_METERS,
+        color: '#ff6600',
+        weight: 2,
+        fillColor: '#ff6600',
+        fillOpacity: 0.12,
+    }).addTo(map);
+
+    L.circleMarker([STORE_LAT, STORE_LNG], {
+        radius: 6,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#ff6600',
+        fillOpacity: 1,
+    }).addTo(map);
+})();
+</script>
+
+</body>
+</html>
