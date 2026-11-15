@@ -25,6 +25,7 @@ Discount Appliance Outlet
 <li><a href="#products">Products</a></li>
 <li><a href="#gallery">Gallery</a></li>
 <li><a href="#contact">Contact</a></li>
+<li><a href="/store-saas">← Back to Store-SaaS</a></li>
 </ul>
 
 </nav>
@@ -325,7 +326,7 @@ Discount Appliance Outlet
     var map = L.map('storeMap', {
         scrollWheelZoom: false,     // prevents page scroll from getting stuck in map
         attributionControl: true,
-    }).setView([STORE_LAT, STORE_LNG], 16);
+    }).setView([STORE_LAT, STORE_LNG], 12);
 
     // Tile layer (OpenStreetMap — free, no API key)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -353,7 +354,15 @@ Discount Appliance Outlet
     // Enable scroll zoom only after user clicks the map
     map.on('click', function () {
         map.scrollWheelZoom.enable();
-    });
+        });
+        L.circle([STORE_LAT, STORE_LNG], {
+        radius: 5000,           // ~5 km service area
+        color: '#ff6600',
+        weight: 2,
+        fillColor: '#ff6600',
+        fillOpacity: 0.12,
+    }).addTo(map);
+
 })();
 </script>
 

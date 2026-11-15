@@ -19,9 +19,7 @@
 
             <h1 style="margin: 0;">Reserve Appliance</h1>
 
-            <a href="/" class="inventory-btn" style="padding: 10px 18px;">
-                ← Back to Homepage
-            </a>
+            <a href="/product/{{ item[0] }}" class="inventory-btn">← Back to Product</a>
 
         </div
         {% if item %}
@@ -80,7 +78,7 @@
         {% else %}
 
             <p>Sorry — that appliance could not be found. It may have already been sold.</p>
-            <a href="/" class="inventory-btn">Back to Homepage</a>
+            <a href="/product/{{ item[0] }}" class="inventory-btn">← Back to Product</a>
 
         {% endif %}
 
