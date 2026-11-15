@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reservations — {{ tenant_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="container">
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for msg in messages %}
+          <div class="flash-msg">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="dashboard-header">
+        <h1>{{ tenant_name }} — Reservations</h1>
+        <div>
+            <a href="/dashboard" class="inventory-btn">Dashboard</a>
+            <a href="/logout" class="inventory-btn">Logout</a>
+        </div>
+    </div>
+
+    <!-- Status filter tabs -->
+    <div class="reservation-tabs">
+        <a href="/reservations?status=new" class="res-tab {% if status_filter == 'new' %}active{% endif %}">
+            New <span class="res-tab-count">{{ counts.new }}</span>
+        </a>
+        <a href="/reservations?status=contacted" class="res-tab {% if status_filter == 'contacted' %}active{% endif %}">
+            Contacted <span class="res-tab-count">{{ counts.contacted }}</span>
+        </a>
+        <a href="/reservations?status=completed" class="res-tab {% if status_filter == 'completed' %}active{% endif %}">
+            Completed <span class="res-tab-count">{{ counts.completed }}</span>
+        </a>
+        <a href="/reservations?status=all" class="res-tab {% if status_filter == 'all' %}active{% endif %}">
+            All <span class="res-tab-count">{{ counts.all }}</span>
+        </a>
+    </div>
+
+    {% if reservations %}
+
+        <div class="reservations-list">
+
+            {% for r in reservations %}
+
+                {% set res_id = r[0] %}
+                {% set inventory_id = r[1] %}
+                {% set customer_name = r[2] %}
+                {% set phone = r[3] %}
+                {% set email = r[4] %}
+                {% set message = r[5] %}
+                {% set date = r[6] %}
+                {% set status = r[8] if r|length > 8 else 'new' %}
+                {% set product_name = products_by_id.get(inventory_id, 'Product #' + inventory_id|string) %}
+
+                <div class="reservation-row status-{{ status }}">
+
+                    <div class="res-header">
+                        <span class="res-status-badge status-{{ status }}">
+                            {% if status == 'new' %}
+                                🟢 NEW
+                            {% elif status == 'contacted' %}
+                                🟡 CONTACTED
+                            {% else %}
+                                ✅ COMPLETED
+                            {% endif %}
+                        </span>
+                        <span class="res-date">{{ date }}</span>
+                    </div>
+
+                    <h3>{{ product_name }}</h3>
+
+                    <div class="res-customer">
+                        <p><strong>👤 {{ customer_name }}</strong></p>
+                        <p>📞 <a href="tel:{{ phone }}">{{ phone }}</a></p>
+                        {% if email %}
+                            <p>✉️ <a href="mailto:{{ email }}">{{ email }}</a></p>
+                        {% endif %}
+                    </div>
+
+                    {% if message %}
+                        <div class="res-message">
+                            <strong>Message:</strong>
+                            <pre>{{ message }}</pre>
+                        </div>
+                    {% endif %}
+
+                    <div class="res-actions">
+
+                        {% if status == 'new' %}
+                            <form method="POST" action="/reservations/{{ res_id }}/status/contacted" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="res-btn res-btn-contacted">Mark as Contacted</button>
+                            </form>
+                        {% endif %}
+
+                        {% if status == 'new' or status == 'contacted' %}
+                            <form method="POST" action="/reservations/{{ res_id }}/status/completed" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="res-btn res-btn-completed">Mark as Completed</button>
+                            </form>
+                        {% endif %}
+
+                        {% if status == 'completed' %}
+                            <form method="POST" action="/reservations/{{ res_id }}/status/new" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="res-btn res-btn-reopen">Reopen</button>
+                            </form>
+                        {% endif %}
+
+                    </div>
+
+                </div>
+
+            {% endfor %}
+
+        </div>
+
+    {% else %}
+
+        <div class="empty-state">
+            {% if status_filter == 'new' %}
+                <p>🎉 No new reservations right now.</p>
+                <p>When a customer reserves a product on your storefront, it will appear here.</p>
+            {% else %}
+                <p>No reservations with status "{{ status_filter }}".</p>
+            {% endif %}
+        </div>
+
+    {% endif %}
+
+</div>
+
+</body>
+</html>

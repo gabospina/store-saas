@@ -37,9 +37,16 @@
     <!-- ========================================================= -->
     <!-- Header                                                    -->
     <!-- ========================================================= -->
+
     <div class="dashboard-header">
         <h1>{{ tenant_name }} — Inventory Dashboard</h1>
         <div>
+            <a href="/reservations" class="inventory-btn" style="position:relative;">
+                Reservations
+                {% if new_reservations_count and new_reservations_count > 0 %}
+                    <span style="background:#ff6600;color:#fff;padding:2px 8px;border-radius:999px;font-size:0.75rem;margin-left:6px;font-weight:700;">{{ new_reservations_count }}</span>
+                {% endif %}
+            </a>
             <a href="/inventory-list" class="inventory-btn">Inventory List</a>
             <a href="/sold-inventory" class="inventory-btn">Sold Inventory</a>
             <a href="/logout" class="inventory-btn">Logout</a>
@@ -67,6 +74,16 @@
     <!-- ========================================================= -->
     <!-- Stats                                                     -->
     <!-- ========================================================= -->
+    {% if new_reservations_count and new_reservations_count > 0 %}
+    <div class="reservation-alert">
+        <span class="reservation-alert-icon">🔔</span>
+        <div class="reservation-alert-text">
+            You have <strong>{{ new_reservations_count }} new reservation{{ '' if new_reservations_count == 1 else 's' }}</strong> waiting for your review.
+        </div>
+        <a href="/reservations?status=new" class="reservation-alert-btn">View Now →</a>
+    </div>
+    {% endif %}
+
     <div class="stats-container">
 
         <div class="stat-card">

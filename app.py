@@ -18,6 +18,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect, CSRFError
 import os
+from flask_mail import Mail, Message
 
 # ---------------------------------------------------------------
 # LOAD ENVIRONMENT VARIABLES FROM .env
@@ -111,6 +112,19 @@ app.config["WTF_CSRF_TIME_LIMIT"] = 3600     # 1 hour
 # app.config["RATELIMIT_STORAGE_URI"] = RATELIMIT_STORAGE
 # app.config["RATELIMIT_HEADERS_ENABLED"] = True     # adds X-RateLimit-* headers
 # app.config["RATELIMIT_DEFAULT"] = "200 per hour"   # global default
+
+# ---------------------------------------------------------------
+# EMAIL NOTIFICATIONS — optional, works only if MAIL_USERNAME set
+# ---------------------------------------------------------------
+app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
+app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT") or 587)
+app.config["MAIL_USE_TLS"] = os.environ.get("MAIL_USE_TLS", "true").lower() == "true"
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME", "")
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD", "")
+app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_DEFAULT_SENDER", "")
+app.config["MAIL_SUPPRESS_SEND"] = not bool(app.config["MAIL_USERNAME"])
+
+mail = Mail(app)
 
 limiter = Limiter(
     key_func=get_remote_address,
@@ -567,6 +581,159 @@ def ensure_database_exists():
     conn.close()
 
 ensure_database_exists()
+
+# ---------------------------------------------------------------
+# RESERVATIONS SCHEMA — add tenant_id and status tracking
+# ---------------------------------------------------------------
+def ensure_reservations_schema():
+    """Add tenant_id, status, and email-tracking columns if missing."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Ensure table exists (fresh installs)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reservations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inventory_id INTEGER,
+            customer_name TEXT,
+            phone TEXT,
+            email TEXT,
+            message TEXT,
+            reservation_date TEXT
+        )
+    """)
+
+    cursor.execute("PRAGMA table_info(reservations)")
+    cols = {row[1] for row in cursor.fetchall()}
+
+    if "tenant_id" not in cols:
+        cursor.execute("ALTER TABLE reservations ADD COLUMN tenant_id INTEGER")
+    if "status" not in cols:
+        cursor.execute("ALTER TABLE reservations ADD COLUMN status TEXT DEFAULT 'new'")
+    if "store_email_sent" not in cols:
+        cursor.execute("ALTER TABLE reservations ADD COLUMN store_email_sent INTEGER DEFAULT 0")
+    if "customer_email_sent" not in cols:
+        cursor.execute("ALTER TABLE reservations ADD COLUMN customer_email_sent INTEGER DEFAULT 0")
+
+    # Backfill tenant_id from inventory for existing rows
+    cursor.execute("""
+        UPDATE reservations
+        SET tenant_id = (
+            SELECT tenant_id FROM inventory WHERE inventory.id = reservations.inventory_id
+        )
+        WHERE tenant_id IS NULL AND inventory_id IS NOT NULL
+    """)
+
+    # Index for fast per-tenant queries
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reservations_tenant ON reservations(tenant_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status)")
+
+    conn.commit()
+    conn.close()
+
+
+ensure_reservations_schema()
+
+
+# ---------------------------------------------------------------
+# RESERVATIONS — counts and notification helpers
+# ---------------------------------------------------------------
+def get_unread_reservation_count(tenant_id):
+    """Return the count of new (unreviewed) reservations for a tenant."""
+    conn = sqlite3.connect(DB_PATH)
+    count = conn.execute(
+        "SELECT COUNT(*) FROM reservations WHERE tenant_id = ? AND status = 'new'",
+        (tenant_id,),
+    ).fetchone()[0]
+    conn.close()
+    return count
+
+
+def mail_configured():
+    """Check if SMTP credentials are set."""
+    return bool(app.config.get("MAIL_USERNAME")) and bool(app.config.get("MAIL_PASSWORD"))
+
+
+def send_reservation_emails(tenant_id, reservation_id, customer_name, phone,
+                             customer_email, message, item_name):
+    """
+    Send notification email to store owner + confirmation to customer.
+    Silently skips if SMTP not configured. Never raises.
+    """
+    if not mail_configured():
+        return
+
+    info = get_tenant_business_info(tenant_id) or {}
+    store_email = info.get("email") or os.environ.get("ADMIN_NOTIFICATION_EMAIL", "")
+    store_name = info.get("name", "Your Store")
+    base_url = get_base_url()
+
+    # ---- Email 1: notify store owner ----
+    if store_email:
+        try:
+            subject = f"🔔 New Reservation: {item_name} — {customer_name}"
+            html = f"""
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+                <h2 style="color:#003366;">New Reservation at {store_name}</h2>
+                <p style="color:#444;">A customer just reserved a product on your storefront!</p>
+                <table style="border-collapse:collapse;width:100%;margin:20px 0;">
+                    <tr><td style="padding:8px;border:1px solid #ddd;background:#f7f9fc;width:130px;"><strong>Product</strong></td><td style="padding:8px;border:1px solid #ddd;">{item_name}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd;background:#f7f9fc;"><strong>Customer</strong></td><td style="padding:8px;border:1px solid #ddd;">{customer_name}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd;background:#f7f9fc;"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd;"><a href="tel:{phone}">{phone}</a></td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd;background:#f7f9fc;"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd;">{customer_email or '(not provided)'}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd;background:#f7f9fc;"><strong>Message</strong></td><td style="padding:8px;border:1px solid #ddd;">{message or '(none)'}</td></tr>
+                </table>
+                <p style="margin:24px 0;">
+                    <a href="{base_url}/reservations"
+                       style="display:inline-block;background:#ff6600;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">
+                       View All Reservations →
+                    </a>
+                </p>
+                <p style="color:#888;font-size:12px;">Sent by Store-SaaS · {store_name}</p>
+            </div>
+            """
+            msg = Message(subject=subject, recipients=[store_email], html=html)
+            mail.send(msg)
+
+            conn = sqlite3.connect(DB_PATH)
+            conn.execute("UPDATE reservations SET store_email_sent = 1 WHERE id = ?", (reservation_id,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[MAIL] Store owner notification failed: {e}")
+
+    # ---- Email 2: confirm to customer ----
+    if customer_email and "@" in customer_email:
+        try:
+            subject = f"Reservation received — {item_name} at {store_name}"
+            body = f"""Hi {customer_name},
+
+Thank you for your reservation at {store_name}!
+
+Product: {item_name}
+{('Your message: ' + message) if message else ''}
+
+The store will contact you within 24 hours to confirm availability and pickup details.
+
+If you have any questions, reply to this email or call the store directly:
+{info.get('phone', '')}
+
+Thanks,
+{store_name}
+
+---
+Sent by Store-SaaS
+"""
+            msg = Message(subject=subject, recipients=[customer_email], body=body)
+            mail.send(msg)
+
+            conn = sqlite3.connect(DB_PATH)
+            conn.execute("UPDATE reservations SET customer_email_sent = 1 WHERE id = ?", (reservation_id,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[MAIL] Customer confirmation failed: {e}")
+
 
 # ---------------------------------------------------------------
 # PUBLIC RESERVATION ENDPOINT (used by /business-demo page)
@@ -1184,10 +1351,10 @@ def reserve(item_id):
 @app.route("/reserve_appliance/submit-reservation/<int:item_id>", methods=["POST"])
 def submit_reservation(item_id):
 
-    customer_name = request.form["customer_name"]
-    phone = request.form["phone"]
-    email = request.form.get("email", "")
-    message = request.form.get("message", "")
+    customer_name = request.form.get("customer_name", "").strip()
+    phone = request.form.get("phone", "").strip()
+    email = request.form.get("email", "").strip()
+    message = request.form.get("message", "").strip()
 
     # Service options
     wants_delivery = "delivery" in request.form
@@ -1195,16 +1362,12 @@ def submit_reservation(item_id):
     wants_haul_away = "haul_away" in request.form
 
     service_lines = []
-    if wants_delivery:
-        service_lines.append("Delivery")
-    if wants_installation:
-        service_lines.append("Installation")
-    if wants_haul_away:
-        service_lines.append("Haul away old appliance")
+    if wants_delivery: service_lines.append("Delivery")
+    if wants_installation: service_lines.append("Installation")
+    if wants_haul_away: service_lines.append("Haul away old appliance")
 
     selected_services = ", ".join(service_lines) if service_lines else "Pickup only (no extra services)"
 
-    # Append services to the message so the manager sees it
     full_message = (
         f"SERVICES REQUESTED: {selected_services}\n\n"
         f"CUSTOMER MESSAGE:\n{message or '(none)'}"
@@ -1213,48 +1376,61 @@ def submit_reservation(item_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # Look up item name for the success page
+    # Look up item + tenant
     cursor.execute(
-        "SELECT product_name FROM inventory WHERE id = ?",
-        (item_id,)
+        "SELECT product_name, tenant_id FROM inventory WHERE id = ?",
+        (item_id,),
     )
     row = cursor.fetchone()
-    item_name = row[0] if row else "this appliance"
+    if not row:
+        conn.close()
+        return redirect("/")
+
+    item_name, tenant_id = row
 
     cursor.execute(
         """
         INSERT INTO reservations
-        (
-            inventory_id,
-            customer_name,
-            phone,
-            email,
-            message,
-            reservation_date
-        )
-        VALUES
-        (?, ?, ?, ?, ?, ?)
+        (inventory_id, tenant_id, customer_name, phone, email, message, reservation_date, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'new')
         """,
         (
             item_id,
+            tenant_id,
             customer_name,
             phone,
             email,
             full_message,
-            datetime.now().strftime("%Y-%m-%d %H:%M")
-        )
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+        ),
     )
+    reservation_id = cursor.lastrowid
 
     conn.commit()
     conn.close()
+
+    # Fire-and-forget email (won't break the flow if it fails)
+    try:
+        send_reservation_emails(
+            tenant_id=tenant_id,
+            reservation_id=reservation_id,
+            customer_name=customer_name,
+            phone=phone,
+            customer_email=email,
+            message=message,
+            item_name=item_name,
+        )
+    except Exception as e:
+        print(f"[RESERVATION] Email error (non-fatal): {e}")
 
     return render_template(
         "reservation_success.html",
         customer_name=customer_name,
         phone=phone,
         item_name=item_name,
-        services=selected_services
+        services=selected_services,
     )
+
 
 # ---------------------------------------------------------------
 # MANAGER ROUTES (all protected)
@@ -1302,6 +1478,8 @@ def dashboard():
     tenant_name = current_tenant()[2]
     bt = current_business_type_config()           # ← NEW
 
+    new_reservations_count = get_unread_reservation_count(tid)
+
     return render_template(
         "dashboard.html",
         inventory=inventory,
@@ -1312,8 +1490,87 @@ def dashboard():
         current_tid=tid,
         allow_tenant_switching=ALLOW_TENANT_SWITCHING,
         tenant_name=tenant_name,
+        new_reservations_count=new_reservations_count,
         bt=bt,                                     # ← NEW
     )
+
+# ---------------------------------------------------------------
+# RESERVATIONS — admin list and status management
+# ---------------------------------------------------------------
+@app.route("/reservations")
+@login_required
+def reservations_list():
+    tid = current_tenant_id()
+    status_filter = request.args.get("status", "new")
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    if status_filter in ("new", "contacted", "completed"):
+        cursor.execute(
+            "SELECT * FROM reservations WHERE tenant_id = ? AND status = ? ORDER BY id DESC",
+            (tid, status_filter),
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM reservations WHERE tenant_id = ? ORDER BY id DESC",
+            (tid,),
+        )
+    reservations = cursor.fetchall()
+
+    # Counts by status
+    counts = {}
+    for status_key in ("new", "contacted", "completed", "all"):
+        if status_key == "all":
+            cursor.execute("SELECT COUNT(*) FROM reservations WHERE tenant_id = ?", (tid,))
+        else:
+            cursor.execute(
+                "SELECT COUNT(*) FROM reservations WHERE tenant_id = ? AND status = ?",
+                (tid, status_key),
+            )
+        counts[status_key] = cursor.fetchone()[0]
+
+    # Look up product names
+    products_by_id = {}
+    if reservations:
+        ids = [r[1] for r in reservations if r[1]]
+        if ids:
+            placeholders = ",".join("?" * len(ids))
+            cursor.execute(f"SELECT id, product_name FROM inventory WHERE id IN ({placeholders})", ids)
+            products_by_id = {row[0]: row[1] for row in cursor.fetchall()}
+
+    conn.close()
+
+    tenant_name = current_tenant()[2]
+
+    return render_template(
+        "reservations_list.html",
+        reservations=reservations,
+        products_by_id=products_by_id,
+        counts=counts,
+        status_filter=status_filter,
+        tenant_name=tenant_name,
+    )
+
+
+@app.route("/reservations/<int:reservation_id>/status/<status>", methods=["POST"])
+@login_required
+def reservation_update_status(reservation_id, status):
+    if status not in ("new", "contacted", "completed"):
+        flash("Invalid status.")
+        return redirect("/reservations")
+
+    tid = current_tenant_id()
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE reservations SET status = ? WHERE id = ? AND tenant_id = ?",
+        (status, reservation_id, tid),
+    )
+    conn.commit()
+    conn.close()
+
+    flash(f"Reservation marked as {status}.")
+    return redirect("/reservations")
 
 
 @app.route("/upload", methods=["POST"])
