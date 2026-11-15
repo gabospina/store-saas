@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics — {{ tenant_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="container">
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for msg in messages %}
+          <div class="flash-msg">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="dashboard-header">
+        <h1>{{ tenant_name }} — Store Insights</h1>
+        <div>
+            <a href="/dashboard" class="inventory-btn">Dashboard</a>
+            <a href="/reservations" class="inventory-btn">Reservations</a>
+            <a href="/logout" class="inventory-btn">Logout</a>
+        </div>
+    </div>
+
+    <p class="demo-intro">See how your store is performing. Data updates in real time as customers browse and reserve products.</p>
+
+    <!-- Period selector -->
+    <div class="analytics-tabs">
+        <a href="/analytics?period=7"   class="analytics-tab {% if period == '7'   %}active{% endif %}">Last 7 days</a>
+        <a href="/analytics?period=30"  class="analytics-tab {% if period == '30'  %}active{% endif %}">Last 30 days</a>
+        <a href="/analytics?period=all" class="analytics-tab {% if period == 'all' %}active{% endif %}">All time</a>
+    </div>
+
+    <!-- ─── 4 Metric cards ─── -->
+    <div class="analytics-metrics">
+
+        <div class="metric-card metric-views">
+            <div class="metric-icon">👁️</div>
+            <div class="metric-value">{{ total_views }}</div>
+            <div class="metric-label">Product Views</div>
+        </div>
+
+        <div class="metric-card metric-reservations">
+            <div class="metric-icon">📩</div>
+            <div class="metric-value">{{ total_reservations }}</div>
+            <div class="metric-label">Reservations</div>
+        </div>
+
+        <div class="metric-card metric-new">
+            <div class="metric-icon">🔔</div>
+            <div class="metric-value">{{ new_reservations }}</div>
+            <div class="metric-label">New (Unreviewed)</div>
+            {% if new_reservations > 0 %}
+                <a href="/reservations?status=new" class="metric-cta">View →</a>
+            {% endif %}
+        </div>
+
+        <div class="metric-card metric-revenue">
+            <div class="metric-icon">💰</div>
+            <div class="metric-value">${{ '%.2f'|format(potential_revenue) }}</div>
+            <div class="metric-label">Potential Revenue</div>
+        </div>
+
+    </div>
+
+    <!-- ─── Charts ─── -->
+    <div class="analytics-charts">
+
+        <div class="chart-container">
+            <h2 class="chart-title">Product Views — Last {{ views_chart|length }} Days</h2>
+            {% if total_views > 0 %}
+                <div class="chart-bars">
+                    {% for day in views_chart %}
+                    {% set pct = (day.value * 100 / max_views) if max_views > 0 else 0 %}
+                    {% set bar_h = pct if pct > 3 else (3 if day.value > 0 else 2) %}
+                    <div class="chart-bar-wrapper">
+                        <span class="chart-bar-value">{{ day.value }}</span>
+                        <div class="chart-bar" style="--bar-height: {{ bar_h }}%;"></div>
+                        <span class="chart-bar-label">{{ day.label }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="chart-empty">
+                    <p>📈 No product views yet.</p>
+                    <p class="chart-empty-sub">Share your product links on WhatsApp or social media to start getting traffic.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="chart-container">
+            <h2 class="chart-title">Reservations — Last {{ reservations_chart|length }} Days</h2>
+            {% if total_reservations > 0 %}
+                <div class="chart-bars">
+                    {% for day in reservations_chart %}
+                    {% set pct = (day.value * 100 / max_reservations) if max_reservations > 0 else 0 %}
+                    {% set bar_h = pct if pct > 3 else (3 if day.value > 0 else 2) %}
+                    <div class="chart-bar-wrapper">
+                        <span class="chart-bar-value">{{ day.value }}</span>
+                        <div class="chart-bar chart-bar-blue" style="--bar-height: {{ bar_h }}%;"></div>
+                        <span class="chart-bar-label">{{ day.label }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="chart-empty">
+                    <p>📩 No reservations yet.</p>
+                    <p class="chart-empty-sub">Once customers reserve products, you'll see the trend here.</p>
+                </div>
+            {% endif %}
+        </div>
+
+    </div>
+
+    <!-- ─── Top products ─── -->
+    <div class="analytics-top-lists">
+
+        <div class="card">
+            <h2>🔥 Top Viewed Products</h2>
+            {% if top_viewed %}
+                <ul class="top-list">
+                    {% for product in top_viewed %}
+                    <li>
+                        <a href="/product/{{ product[0] }}">{{ product[1] }}</a>
+                        <span class="top-list-count">{{ product[2] }} views</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="no-data">No product views in this period.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h2>⭐ Top Reserved Products</h2>
+            {% if top_reserved %}
+                <ul class="top-list">
+                    {% for product in top_reserved %}
+                    <li>
+                        <a href="/product/{{ product[0] }}">{{ product[1] }}</a>
+                        <span class="top-list-count">{{ product[2] }} reservation{{ '' if product[2] == 1 else 's' }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="no-data">No reservations in this period.</p>
+            {% endif %}
+        </div>
+
+    </div>
+
+</div>
+
+</body>
+</html>

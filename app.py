@@ -638,6 +638,30 @@ ensure_reservations_schema()
 
 
 # ---------------------------------------------------------------
+# ANALYTICS — product view tracking
+# ---------------------------------------------------------------
+def ensure_analytics_tables():
+    """Create product_views table for analytics tracking."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS product_views (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inventory_id INTEGER NOT NULL,
+            tenant_id INTEGER NOT NULL,
+            viewed_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_views_tenant_date ON product_views(tenant_id, viewed_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_views_product ON product_views(inventory_id)")
+    conn.commit()
+    conn.close()
+
+
+ensure_analytics_tables()
+
+# ---------------------------------------------------------------
 # RESERVATIONS — counts and notification helpers
 # ---------------------------------------------------------------
 def get_unread_reservation_count(tenant_id):
@@ -1560,6 +1584,173 @@ def reservations_list():
         counts=counts,
         status_filter=status_filter,
         tenant_name=tenant_name,
+    )
+
+
+# ---------------------------------------------------------------
+# ANALYTICS — Store insights dashboard
+# ---------------------------------------------------------------
+@app.route("/analytics")
+@login_required
+def analytics():
+    tid = current_tenant_id()
+    period = request.args.get("period", "7")
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Date cutoff
+    if period == "all":
+        cutoff_iso = None
+        cutoff_date = None
+        chart_days = 7
+    else:
+        try:
+            days = int(period)
+        except (ValueError, TypeError):
+            days = 7
+        days = max(1, min(days, 30))
+        cutoff_dt = datetime.now() - timedelta(days=days)
+        cutoff_iso = cutoff_dt.strftime("%Y-%m-%d %H:%M:%S")
+        cutoff_date = cutoff_dt.strftime("%Y-%m-%d")
+        chart_days = days if days <= 14 else 7
+
+    # ── Metric 1: Total product views ──
+    if cutoff_iso:
+        cursor.execute(
+            "SELECT COUNT(*) FROM product_views WHERE tenant_id = ? AND viewed_at >= ?",
+            (tid, cutoff_iso),
+        )
+    else:
+        cursor.execute("SELECT COUNT(*) FROM product_views WHERE tenant_id = ?", (tid,))
+    total_views = cursor.fetchone()[0]
+
+    # ── Metric 2: Total reservations ──
+    if cutoff_date:
+        cursor.execute(
+            "SELECT COUNT(*) FROM reservations WHERE tenant_id = ? AND reservation_date >= ?",
+            (tid, cutoff_date),
+        )
+    else:
+        cursor.execute("SELECT COUNT(*) FROM reservations WHERE tenant_id = ?", (tid,))
+    total_reservations = cursor.fetchone()[0]
+
+    # ── Metric 3: New (unreviewed) reservations ──
+    cursor.execute(
+        "SELECT COUNT(*) FROM reservations WHERE tenant_id = ? AND status = 'new'",
+        (tid,),
+    )
+    new_reservations = cursor.fetchone()[0]
+
+        # ── Metric 4: Potential revenue from PENDING reservations only ──
+    # "Potential" = money that could still come in
+    # → Only new + contacted reservations (NOT completed, NOT cancelled)
+    # → Respect the current period filter
+    if cutoff_date:
+        cursor.execute("""
+            SELECT COALESCE(SUM(i.price), 0) FROM reservations r
+            JOIN inventory i ON i.id = r.inventory_id
+            WHERE r.tenant_id = ?
+              AND r.status IN ('new', 'contacted')
+              AND r.reservation_date >= ?
+        """, (tid, cutoff_date))
+    else:
+        cursor.execute("""
+            SELECT COALESCE(SUM(i.price), 0) FROM reservations r
+            JOIN inventory i ON i.id = r.inventory_id
+            WHERE r.tenant_id = ?
+              AND r.status IN ('new', 'contacted')
+        """, (tid,))
+    potential_revenue = cursor.fetchone()[0] or 0
+
+    # ── Charts: last N days ──
+    views_chart = []
+    reservations_chart = []
+    for i in range(chart_days - 1, -1, -1):
+        d = datetime.now() - timedelta(days=i)
+        d_start = d.strftime("%Y-%m-%d") + " 00:00:00"
+        d_end = d.strftime("%Y-%m-%d") + " 23:59:59"
+        d_label = d.strftime("%a")
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM product_views WHERE tenant_id = ? AND viewed_at BETWEEN ? AND ?",
+            (tid, d_start, d_end),
+        )
+        views_chart.append({"label": d_label, "value": cursor.fetchone()[0]})
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM reservations WHERE tenant_id = ? AND reservation_date = ?",
+            (tid, d.strftime("%Y-%m-%d")),
+        )
+        reservations_chart.append({"label": d_label, "value": cursor.fetchone()[0]})
+
+    max_views = max([d["value"] for d in views_chart] + [1])
+    max_reservations = max([d["value"] for d in reservations_chart] + [1])
+
+    # ── Top viewed products ──
+    if cutoff_iso:
+        cursor.execute("""
+            SELECT i.id, i.product_name, COUNT(v.id) AS views
+            FROM product_views v
+            JOIN inventory i ON i.id = v.inventory_id
+            WHERE v.tenant_id = ? AND v.viewed_at >= ?
+            GROUP BY i.id
+            ORDER BY views DESC
+            LIMIT 5
+        """, (tid, cutoff_iso))
+    else:
+        cursor.execute("""
+            SELECT i.id, i.product_name, COUNT(v.id) AS views
+            FROM product_views v
+            JOIN inventory i ON i.id = v.inventory_id
+            WHERE v.tenant_id = ?
+            GROUP BY i.id
+            ORDER BY views DESC
+            LIMIT 5
+        """, (tid,))
+    top_viewed = cursor.fetchall()
+
+    # ── Top reserved products ──
+    if cutoff_date:
+        cursor.execute("""
+            SELECT i.id, i.product_name, COUNT(r.id) AS reservations
+            FROM reservations r
+            JOIN inventory i ON i.id = r.inventory_id
+            WHERE r.tenant_id = ? AND r.reservation_date >= ?
+            GROUP BY i.id
+            ORDER BY reservations DESC
+            LIMIT 5
+        """, (tid, cutoff_date))
+    else:
+        cursor.execute("""
+            SELECT i.id, i.product_name, COUNT(r.id) AS reservations
+            FROM reservations r
+            JOIN inventory i ON i.id = r.inventory_id
+            WHERE r.tenant_id = ?
+            GROUP BY i.id
+            ORDER BY reservations DESC
+            LIMIT 5
+        """, (tid,))
+    top_reserved = cursor.fetchall()
+
+    conn.close()
+
+    tenant_name = current_tenant()[2]
+
+    return render_template(
+        "analytics.html",
+        tenant_name=tenant_name,
+        period=period,
+        total_views=total_views,
+        total_reservations=total_reservations,
+        new_reservations=new_reservations,
+        potential_revenue=potential_revenue,
+        views_chart=views_chart,
+        reservations_chart=reservations_chart,
+        max_views=max_views,
+        max_reservations=max_reservations,
+        top_viewed=top_viewed,
+        top_reserved=top_reserved,
     )
 
 
@@ -2807,6 +2998,18 @@ def product_detail(item_id):
 
     canonical_url = f"{base_url}/product/{item_id}"
 
+    # ── Track this product view (analytics) ──
+    try:
+        conn_track = sqlite3.connect(DB_PATH)
+        conn_track.execute(
+            "INSERT INTO product_views (inventory_id, tenant_id, viewed_at) VALUES (?, ?, ?)",
+            (item_id, tenant_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        )
+        conn_track.commit()
+        conn_track.close()
+    except Exception as e:
+        print(f"[ANALYTICS] View tracking failed (non-fatal): {e}")
+
     # ── NEW: JSON-LD schemas ──
     local_schema = build_local_business_schema(tenant_id, base_url)
     product_schema = build_product_schema(item, tenant_id, base_url, photos)
@@ -2825,6 +3028,9 @@ def product_detail(item_id):
         product_schema=product_schema,
         storefront_url=get_storefront_url(tenant_id),
     )
+
+
+
 
 
 @app.route("/royal-home/dashboard")
