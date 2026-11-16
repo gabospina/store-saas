@@ -43,12 +43,30 @@
             <div class="metric-icon">👁️</div>
             <div class="metric-value">{{ total_views }}</div>
             <div class="metric-label">Product Views</div>
+            {% if views_this_week > 0 or views_last_week > 0 %}
+                {% if views_wow > 0 %}
+                    <div class="metric-trend trend-up">↑ {{ views_wow }}% vs last week</div>
+                {% elif views_wow < 0 %}
+                    <div class="metric-trend trend-down">↓ {{ -views_wow }}% vs last week</div>
+                {% else %}
+                    <div class="metric-trend">— No change vs last week</div>
+                {% endif %}
+            {% endif %}
         </div>
 
         <div class="metric-card metric-reservations">
             <div class="metric-icon">📩</div>
             <div class="metric-value">{{ total_reservations }}</div>
             <div class="metric-label">Reservations</div>
+            {% if reservations_this_week > 0 or reservations_last_week > 0 %}
+                {% if reservations_wow > 0 %}
+                    <div class="metric-trend trend-up">↑ {{ reservations_wow }}% vs last week</div>
+                {% elif reservations_wow < 0 %}
+                    <div class="metric-trend trend-down">↓ {{ -reservations_wow }}% vs last week</div>
+                {% else %}
+                    <div class="metric-trend">— No change vs last week</div>
+                {% endif %}
+            {% endif %}
         </div>
 
         <div class="metric-card metric-new">
@@ -66,6 +84,71 @@
             <div class="metric-label">Potential Revenue</div>
         </div>
 
+    </div>
+
+    <!-- ─── Second row: 4 ROI metrics ─── -->
+    <div class="analytics-metrics">
+
+        <div class="metric-card metric-conversion">
+            <div class="metric-icon">🎯</div>
+            <div class="metric-value">
+                {% if total_views > 0 %}{{ conversion_rate }}%{% else %}—{% endif %}
+            </div>
+            <div class="metric-label">Conversion Rate</div>
+            {% if total_views > 0 %}
+            <div class="metric-hint">{{ total_reservations }} of {{ total_views }} viewers reserved</div>
+            {% endif %}
+        </div>
+
+        <div class="metric-card metric-confirmed">
+            <div class="metric-icon">✅</div>
+            <div class="metric-value">${{ '%.2f'|format(confirmed_revenue) }}</div>
+            <div class="metric-label">Confirmed Revenue</div>
+            <div class="metric-hint">From completed reservations</div>
+        </div>
+
+        <div class="metric-card metric-shares">
+            <div class="metric-icon">📱</div>
+            <div class="metric-value">{{ total_shares }}</div>
+            <div class="metric-label">Social Shares</div>
+            <div class="metric-hint">WhatsApp / Copy / Native</div>
+        </div>
+
+        <div class="metric-card metric-returning">
+            <div class="metric-icon">🔁</div>
+            <div class="metric-value">{{ returning_customers }}</div>
+            <div class="metric-label">Returning Customers</div>
+            <div class="metric-hint">Reserved more than once</div>
+        </div>
+
+    </div>
+
+    <!-- ─── Inventory Health widget ─── -->
+    <div class="card" style="margin-bottom: 28px;">
+        <h2>📦 Inventory Health</h2>
+        <div class="inventory-health">
+
+            <div class="health-stat">
+                <div class="health-value health-available">{{ inventory_available }}</div>
+                <div class="health-label">Available Products</div>
+            </div>
+
+            <div class="health-stat">
+                <div class="health-value health-sold">{{ inventory_sold }}</div>
+                <div class="health-label">Sold Products</div>
+            </div>
+
+            <div class="health-stat">
+                <div class="health-value health-value-amount">${{ '%.0f'|format(inventory_value) }}</div>
+                <div class="health-label">Inventory Value</div>
+            </div>
+
+            <div class="health-stat">
+                <div class="health-value health-total">{{ inventory_available + inventory_sold }}</div>
+                <div class="health-label">Total Products</div>
+            </div>
+
+        </div>
     </div>
 
     <!-- ─── Charts ─── -->

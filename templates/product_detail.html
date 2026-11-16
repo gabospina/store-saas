@@ -48,7 +48,7 @@
 </script>
 {% endif %}
 
-<body>
+<body data-product-id="{{ item[0] }}">
 
 <header class="product-header">
     <div class="container">
@@ -131,8 +131,9 @@
                     <div class="share-buttons">
                         {% set share_text = "Check out this " ~ item[1] ~ " at " ~ tenant[2] ~ " — " ~ canonical_url %}
                         <a href="https://wa.me/?text={{ share_text|urlencode }}"
-                           target="_blank" rel="noopener"
-                           class="share-btn share-whatsapp">
+                            target="_blank" rel="noopener"
+                            class="share-btn share-whatsapp"
+                            onclick="trackShare('whatsapp')">
                             <span>📱</span> WhatsApp
                         </a>
                         <button type="button"
@@ -184,7 +185,18 @@ function swapMainImage(thumb) {
     thumb.classList.add('active');
 }
 
+function trackShare(method) {
+    var productId = document.body.dataset.productId;
+    if (!productId) return;
+    fetch('/api/track-share', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ product_id: parseInt(productId, 10), method: method })
+    }).catch(function () {});
+}
+
 function copyShareLink(btn, url) {
+    trackShare('copy');
     navigator.clipboard.writeText(url).then(function () {
         var original = btn.innerHTML;
         btn.innerHTML = '<span>✓</span> Copied!';
@@ -195,12 +207,12 @@ function copyShareLink(btn, url) {
 }
 
 function nativeShare(title, url) {
+    trackShare('native');
     if (navigator.share) {
         navigator.share({ title: title, url: url }).catch(function () {});
     }
 }
 
-// Show native share button if supported
 if (navigator.share) {
     var btn = document.getElementById('nativeShareBtn');
     if (btn) btn.style.display = '';

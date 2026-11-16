@@ -3763,3 +3763,83 @@ section.hero .hero-trust {
     .analytics-top-lists { grid-template-columns: 1fr; }
     .chart-bars { height: 160px; }
 }
+
+/* =============================================================
+   ANALYTICS — Additional ROI metrics
+   ============================================================= */
+
+/* New metric card colors */
+.metric-conversion { border-left-color: #10b981; }
+.metric-confirmed  { border-left-color: #059669; }
+.metric-shares     { border-left-color: #8b5cf6; }
+.metric-returning  { border-left-color: #ec4899; }
+
+/* Trend indicator */
+.metric-trend {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #f0f4fa;
+    color: #666;
+}
+.metric-trend.trend-up {
+    background: #d1fae5;
+    color: #065f46;
+}
+.metric-trend.trend-down {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Hint text below metric */
+.metric-hint {
+    font-size: 0.75rem;
+    color: #888;
+    margin-top: 6px;
+    font-style: italic;
+}
+
+/* Inventory health widget */
+.inventory-health {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+    margin-top: 12px;
+}
+.health-stat {
+    text-align: center;
+    padding: 18px 14px;
+    background: #f7f9fc;
+    border-radius: 10px;
+    border: 1px solid #e5eaf0;
+}
+.health-value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 6px;
+    color: #003366;
+}
+.health-value.health-available { color: #10b981; }
+.health-value.health-sold      { color: #6b7280; }
+.health-value.health-value-amount { color: #ff6600; font-size: 1.5rem; }
+.health-value.health-total     { color: #003366; }
+.health-label {
+    font-size: 0.78rem;
+    color: #666;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+    .inventory-health {
+        grid-template-columns: 1fr 1fr;
+    }
+    .health-value { font-size: 1.4rem; }
+    .health-value.health-value-amount { font-size: 1.2rem; }
+}

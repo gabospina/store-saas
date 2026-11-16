@@ -638,13 +638,14 @@ ensure_reservations_schema()
 
 
 # ---------------------------------------------------------------
-# ANALYTICS — product view tracking
+# ANALYTICS — product view + share tracking
 # ---------------------------------------------------------------
 def ensure_analytics_tables():
-    """Create product_views table for analytics tracking."""
+    """Create product_views and product_shares tables for analytics tracking."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    # Table 1: Product views (already exists)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS product_views (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -655,6 +656,19 @@ def ensure_analytics_tables():
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_views_tenant_date ON product_views(tenant_id, viewed_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_views_product ON product_views(inventory_id)")
+
+    # Table 2: Product shares (NEW)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS product_shares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inventory_id INTEGER NOT NULL,
+            tenant_id INTEGER NOT NULL,
+            method TEXT NOT NULL,
+            shared_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_shares_tenant_date ON product_shares(tenant_id, shared_at)")
+
     conn.commit()
     conn.close()
 
@@ -841,6 +855,41 @@ def api_reserve():
         }), 500
 
     return jsonify({"success": True})
+
+
+@app.route("/api/track-share", methods=["POST"])
+@csrf.exempt
+@limiter.limit("60 per minute")
+def api_track_share():
+    """Record a share/copy action for analytics."""
+    data = request.get_json(silent=True) or {}
+    product_id = data.get("product_id")
+    method = (data.get("method") or "unknown").strip().lower()[:20]
+
+    if not product_id:
+        return jsonify({"success": False}), 400
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT tenant_id FROM inventory WHERE id = ?", (int(product_id),))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"success": False}), 404
+
+        cursor.execute(
+            "INSERT INTO product_shares (inventory_id, tenant_id, method, shared_at) VALUES (?, ?, ?, ?)",
+            (int(product_id), row[0], method, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[ANALYTICS] Share tracking failed: {e}")
+        return jsonify({"success": False}), 500
+
+    return jsonify({"success": True})
+
 
 # ---------------------------------------------------------------
 # LOGIN REQUIRED DECORATOR
@@ -1525,7 +1574,7 @@ def dashboard():
         allow_tenant_switching=ALLOW_TENANT_SWITCHING,
         tenant_name=tenant_name,
         new_reservations_count=new_reservations_count,
-        bt=bt,                                     # ← NEW
+        bt=bt,
     )
 
 # ---------------------------------------------------------------
@@ -1733,6 +1782,111 @@ def analytics():
         """, (tid,))
     top_reserved = cursor.fetchall()
 
+        # ── METRIC 5: Conversion rate (views → reservations) ──
+    if total_views > 0:
+        conversion_rate = round((total_reservations / total_views) * 100, 1)
+    else:
+        conversion_rate = 0.0
+
+    # ── METRIC 6: Confirmed revenue (completed reservations only) ──
+    if cutoff_date:
+        cursor.execute("""
+            SELECT COALESCE(SUM(i.price), 0) FROM reservations r
+            JOIN inventory i ON i.id = r.inventory_id
+            WHERE r.tenant_id = ?
+              AND r.status = 'completed'
+              AND r.reservation_date >= ?
+        """, (tid, cutoff_date))
+    else:
+        cursor.execute("""
+            SELECT COALESCE(SUM(i.price), 0) FROM reservations r
+            JOIN inventory i ON i.id = r.inventory_id
+            WHERE r.tenant_id = ?
+              AND r.status = 'completed'
+        """, (tid,))
+    confirmed_revenue = cursor.fetchone()[0] or 0
+
+    # ── METRIC 7: Shares (WhatsApp / copy / native) ──
+    if cutoff_iso:
+        cursor.execute(
+            "SELECT COUNT(*) FROM product_shares WHERE tenant_id = ? AND shared_at >= ?",
+            (tid, cutoff_iso),
+        )
+    else:
+        cursor.execute("SELECT COUNT(*) FROM product_shares WHERE tenant_id = ?", (tid,))
+    total_shares = cursor.fetchone()[0]
+
+    # ── METRIC 8: Returning customers ──
+    cursor.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT phone FROM reservations
+            WHERE tenant_id = ? AND phone IS NOT NULL AND phone != ''
+            GROUP BY phone
+            HAVING COUNT(*) > 1
+        )
+    """, (tid,))
+    returning_customers = cursor.fetchone()[0]
+
+    # ── METRIC 9: Week-over-week trends ──
+    week_ago = datetime.now() - timedelta(days=7)
+    two_weeks_ago = datetime.now() - timedelta(days=14)
+    week_ago_iso = week_ago.strftime("%Y-%m-%d %H:%M:%S")
+    two_weeks_ago_iso = two_weeks_ago.strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM product_views WHERE tenant_id = ? AND viewed_at >= ?",
+        (tid, week_ago_iso),
+    )
+    views_this_week = cursor.fetchone()[0]
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM product_views WHERE tenant_id = ? AND viewed_at >= ? AND viewed_at < ?",
+        (tid, two_weeks_ago_iso, week_ago_iso),
+    )
+    views_last_week = cursor.fetchone()[0]
+
+    week_ago_date = week_ago.strftime("%Y-%m-%d")
+    two_weeks_ago_date = two_weeks_ago.strftime("%Y-%m-%d")
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM reservations WHERE tenant_id = ? AND reservation_date >= ?",
+        (tid, week_ago_date),
+    )
+    reservations_this_week = cursor.fetchone()[0]
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM reservations WHERE tenant_id = ? AND reservation_date >= ? AND reservation_date < ?",
+        (tid, two_weeks_ago_date, week_ago_date),
+    )
+    reservations_last_week = cursor.fetchone()[0]
+
+    def wow_pct(current, previous):
+        if previous == 0:
+            return 100.0 if current > 0 else 0.0
+        return round(((current - previous) / previous) * 100, 1)
+
+    views_wow = wow_pct(views_this_week, views_last_week)
+    reservations_wow = wow_pct(reservations_this_week, reservations_last_week)
+
+    # ── METRIC 10: Inventory health ──
+    cursor.execute(
+        "SELECT COUNT(*) FROM inventory WHERE tenant_id = ? AND status = 'Available'",
+        (tid,),
+    )
+    inventory_available = cursor.fetchone()[0]
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM inventory WHERE tenant_id = ? AND status = 'Sold'",
+        (tid,),
+    )
+    inventory_sold = cursor.fetchone()[0]
+
+    cursor.execute(
+        "SELECT COALESCE(SUM(price), 0) FROM inventory WHERE tenant_id = ? AND status = 'Available'",
+        (tid,),
+    )
+    inventory_value = cursor.fetchone()[0] or 0
+
     conn.close()
 
     tenant_name = current_tenant()[2]
@@ -1751,6 +1905,19 @@ def analytics():
         max_reservations=max_reservations,
         top_viewed=top_viewed,
         top_reserved=top_reserved,
+        conversion_rate=conversion_rate,
+        confirmed_revenue=confirmed_revenue,
+        total_shares=total_shares,
+        returning_customers=returning_customers,
+        views_this_week=views_this_week,
+        views_last_week=views_last_week,
+        views_wow=views_wow,
+        reservations_this_week=reservations_this_week,
+        reservations_last_week=reservations_last_week,
+        reservations_wow=reservations_wow,
+        inventory_available=inventory_available,
+        inventory_sold=inventory_sold,
+        inventory_value=inventory_value,
     )
 
 
