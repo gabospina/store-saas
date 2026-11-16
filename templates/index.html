@@ -286,7 +286,10 @@ Discount Appliance Outlet
                 href="https://www.google.com/maps/dir/?api=1&destination=3237+Sources+Blvd,+Dollard-des-Ormeaux,+QC+H9B+1Z6,+Canada"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="visit-us-btn">
+                class="visit-us-btn"
+                data-track-action="directions"
+                data-tenant-id="1"
+                onclick="trackStoreAction(this)">
 
                 Get Directions →
 
@@ -364,6 +367,19 @@ Discount Appliance Outlet
     }).addTo(map);
 
 })();
+</script>
+
+<script>
+function trackStoreAction(el) {
+    var actionType = el.dataset.trackAction;
+    var tenantId = el.dataset.tenantId;
+    if (!actionType || !tenantId) return;
+    fetch('/api/track-action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action_type: actionType, tenant_id: parseInt(tenantId, 10), source: 'storefront'})
+    }).catch(function() {});
+}
 </script>
 
 <footer>

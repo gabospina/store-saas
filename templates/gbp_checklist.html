@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Business Profile — {{ tenant_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="container">
+
+    <div class="dashboard-header">
+        <h1>{{ tenant_name }} — Google Business Profile</h1>
+        <div>
+            <a href="/dashboard" class="inventory-btn">Dashboard</a>
+            <a href="/analytics" class="inventory-btn">Analytics</a>
+            <a href="/logout" class="inventory-btn">Logout</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🎯 Why This Matters</h2>
+        <p>
+            When customers search "{{ info.get('category', 'store') }} near me" or
+            "{{ info.get('alternate_name', 'store') }} Montreal" on Google, your
+            <strong>Google Business Profile (GBP)</strong> is what shows up first — before your website.
+        </p>
+        <p>
+            <strong>Stores with a complete GBP get 7x more clicks</strong> than stores without one.
+            It's the single highest-impact thing you can do to bring customers to your store.
+        </p>
+        <p style="margin-top:12px;">
+            <a href="https://business.google.com" target="_blank" rel="noopener" class="btn">
+                Open Google Business Profile →
+            </a>
+        </p>
+    </div>
+
+    <div class="card">
+        <h2>✅ Your Setup Checklist</h2>
+        <p>Complete these steps in your Google Business Profile. Each one boosts your local search ranking.</p>
+
+        <div class="gbp-checklist">
+
+            <div class="gbp-item">
+                <span class="gbp-num">1</span>
+                <div class="gbp-content">
+                    <h3>Claim Your Business</h3>
+                    <p>If you haven't already, claim your free listing at business.google.com. Enter your exact business name as it appears on your signage.</p>
+                </div>
+            </div>
+
+            <div class="gbp-item">
+                <span class="gbp-num">2</span>
+                <div class="gbp-content">
+                    <h3>Add Your Address and Hours</h3>
+                    <p><strong>Address:</strong> {{ info.get('address', {}).get('street', '') }}, {{ info.get('address', {}).get('city', '') }}, {{ info.get('address', {}).get('region', '') }} {{ info.get('address', {}).get('postal_code', '') }}</p>
+                    <p><strong>Phone:</strong> {{ info.get('phone', '') }}</p>
+                    <p><strong>Hours:</strong> Mon–Sat, 9:00 AM – 6:00 PM</p>
+                    <p>These must match your website exactly. Google cross-checks consistency.</p>
+                </div>
+            </div>
+
+            <div class="gbp-item">
+                <span class="gbp-num">3</span>
+                <div class="gbp-content">
+                    <h3>Choose the Right Categories</h3>
+                    <p>Primary category: <strong>{{ info.get('category', '') }}</strong></p>
+                    <p>Add secondary categories if applicable (e.g., "Appliance Store", "Used Appliance Store"). Categories determine which searches you appear in.</p>
+                </div>
+            </div>
+
+            <div class="gbp-item">
+                <span class="gbp-num">4</span>
+                <div class="gbp-content">
+                    <h3>Add Photos Weekly</h3>
+                    <p>Google prioritizes profiles with fresh photos. Add 2–3 photos per week: new arrivals, the storefront, happy customers (with permission).</p>
+                    <p><strong>Tip:</strong> Use photos from your website's product uploads — they're already in the right format.</p>
+                </div>
+            </div>
+
+            <div class="gbp-item">
+                <span class="gbp-num">5</span>
+                <div class="gbp-content">
+                    <h3>Request Reviews</h3>
+                    <p>After every sale, ask the customer for a Google review. Even 20 reviews can move you to the top-3 "Local Pack" results.</p>
+                    <p><strong>Tip:</strong> Use the "Reply" button on your reservations page — add "If you enjoyed shopping with us, a Google review would mean a lot" to the end of each reply.</p>
+                </div>
+            </div>
+
+            <div class="gbp-item">
+                <span class="gbp-num">6</span>
+                <div class="gbp-content">
+                    <h3>Add Products to GBP</h3>
+                    <p>Google now lets you list products directly in your Business Profile. Add your top 10 products with photos and prices.</p>
+                    <p><strong>Tip:</strong> Copy from your website's product pages — Google may link them automatically.</p>
+                </div>
+            </div>
+
+            <div class="gbp-item">
+                <span class="gbp-num">7</span>
+                <div class="gbp-content">
+                    <h3>Post Weekly Updates</h3>
+                    <p>Google Posts are like mini-announcements on your profile. Post weekly: new arrivals, sales, events. Each post is indexed by Google.</p>
+                </div>
+            </div>
+
+            <div class="gbp-item">
+                <span class="gbp-num">8</span>
+                <div class="gbp-content">
+                    <h3>Enable Messaging</h3>
+                    <p>Turn on Google's messaging feature so customers can text you directly from your profile. Response times matter — set an alert.</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="card" style="background:#f7f9fc;">
+        <h2>📈 Tracking Your Results</h2>
+        <p>
+            Once your GBP is set up, watch your <a href="/analytics">Analytics page</a> for:
+        </p>
+        <ul style="line-height:1.8;color:#333;">
+            <li><strong>Directions Clicks</strong> — customers clicking "Get Directions" from your storefront</li>
+            <li><strong>Call Clicks</strong> — customers tapping to call from their phone</li>
+            <li><strong>Product Views</strong> — traffic to your product pages</li>
+            <li><strong>Reservations</strong> — high-intent leads</li>
+        </ul>
+        <p style="margin-top:12px;">
+            <strong>Pro tip:</strong> Compare your analytics before and after completing this checklist.
+            Most stores see a 20–50% increase in directions clicks within 30 days.
+        </p>
+    </div>
+
+</div>
+
+</body>
+</html>

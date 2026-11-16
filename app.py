@@ -669,6 +669,32 @@ def ensure_analytics_tables():
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_shares_tenant_date ON product_shares(tenant_id, shared_at)")
 
+    # Table 3: Store actions (customer intent signals — directions, calls)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS store_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL,
+            action_type TEXT NOT NULL,
+            source TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_actions_tenant_date ON store_actions(tenant_id, created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_actions_type ON store_actions(action_type)")
+
+    # Table 4: QR codes (unique per tenant, multiple labeled codes allowed)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS qr_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            label TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_tenant ON qr_codes(tenant_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_token ON qr_codes(token)")
+
     conn.commit()
     conn.close()
 
@@ -775,6 +801,74 @@ Sent by Store-SaaS
             conn.close()
         except Exception as e:
             print(f"[MAIL] Customer confirmation failed: {e}")
+
+
+# ---------------------------------------------------------------
+# TIER 3 — QR CODE HELPERS
+# ---------------------------------------------------------------
+import uuid as _uuid_qr
+import io as _io_qr
+
+
+def _generate_qr_token():
+    """Generate a short unique token for a QR code."""
+    return _uuid_qr.uuid4().hex[:12]
+
+
+def _generate_qr_png(url, box_size=10):
+    """Generate a QR code PNG as BytesIO. Returns buffer."""
+    try:
+        import qrcode
+    except ImportError:
+        print("[QR] qrcode library not installed")
+        return None
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=box_size,
+        border=3,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buf = _io_qr.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
+
+
+def _get_or_create_primary_qr(tenant_id):
+    """Ensure the tenant has at least one QR code. Returns the primary (oldest) row."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT id, token, label FROM qr_codes WHERE tenant_id = ? ORDER BY id ASC LIMIT 1",
+        (tenant_id,),
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        token = _generate_qr_token()
+        cursor.execute(
+            "INSERT INTO qr_codes (tenant_id, token, label, created_at) VALUES (?, ?, ?, ?)",
+            (tenant_id, token, "Primary", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        conn.commit()
+        row = (cursor.lastrowid, token, "Primary")
+
+    conn.close()
+    return row  # (id, token, label)
+
+
+def _get_qr_base_url():
+    """Return the base URL to embed in QR codes."""
+    explicit = os.environ.get("PRODUCTION_DOMAIN", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    return get_base_url()
 
 
 # ---------------------------------------------------------------
@@ -886,6 +980,43 @@ def api_track_share():
         conn.close()
     except Exception as e:
         print(f"[ANALYTICS] Share tracking failed: {e}")
+        return jsonify({"success": False}), 500
+
+    return jsonify({"success": True})
+
+
+@app.route("/api/track-action", methods=["POST"])
+@csrf.exempt
+@limiter.limit("60 per minute")
+def api_track_action():
+    """Record a customer-side action (directions click, call click)."""
+    data = request.get_json(silent=True) or {}
+    action_type = (data.get("action_type") or "").strip().lower()
+    source = (data.get("source") or "").strip()[:50]
+    tenant_id = data.get("tenant_id")
+
+    if action_type not in ("directions", "call"):
+        return jsonify({"success": False, "error": "invalid action"}), 400
+
+    if not tenant_id:
+        return jsonify({"success": False, "error": "missing tenant"}), 400
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM tenants WHERE id = ?", (int(tenant_id),))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({"success": False}), 404
+
+        cursor.execute(
+            "INSERT INTO store_actions (tenant_id, action_type, source, created_at) VALUES (?, ?, ?, ?)",
+            (int(tenant_id), action_type, source, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[ANALYTICS] Action tracking failed: {e}")
         return jsonify({"success": False}), 500
 
     return jsonify({"success": True})
@@ -1626,6 +1757,10 @@ def reservations_list():
 
     tenant_name = current_tenant()[2]
 
+    info = get_tenant_business_info(tid) or {}
+    store_maps_url = info.get("maps_url", "")
+    store_phone = info.get("phone", "")
+
     return render_template(
         "reservations_list.html",
         reservations=reservations,
@@ -1633,6 +1768,8 @@ def reservations_list():
         counts=counts,
         status_filter=status_filter,
         tenant_name=tenant_name,
+        store_maps_url=store_maps_url,
+        store_phone=store_phone,
     )
 
 
@@ -1887,6 +2024,45 @@ def analytics():
     )
     inventory_value = cursor.fetchone()[0] or 0
 
+        # ── METRIC 11: Storefront directions clicks ──
+    if cutoff_iso:
+        cursor.execute(
+            "SELECT COUNT(*) FROM store_actions WHERE tenant_id = ? AND action_type = 'directions' AND created_at >= ?",
+            (tid, cutoff_iso),
+        )
+    else:
+        cursor.execute(
+            "SELECT COUNT(*) FROM store_actions WHERE tenant_id = ? AND action_type = 'directions'",
+            (tid,),
+        )
+    directions_clicks = cursor.fetchone()[0]
+
+    # ── METRIC 12: Storefront call clicks ──
+    if cutoff_iso:
+        cursor.execute(
+            "SELECT COUNT(*) FROM store_actions WHERE tenant_id = ? AND action_type = 'call' AND created_at >= ?",
+            (tid, cutoff_iso),
+        )
+    else:
+        cursor.execute(
+            "SELECT COUNT(*) FROM store_actions WHERE tenant_id = ? AND action_type = 'call'",
+            (tid,),
+        )
+    call_clicks = cursor.fetchone()[0]
+
+        # ── METRIC 13: QR code scans ──
+    if cutoff_iso:
+        cursor.execute(
+            "SELECT COUNT(*) FROM store_actions WHERE tenant_id = ? AND action_type = 'qr_scan' AND created_at >= ?",
+            (tid, cutoff_iso),
+        )
+    else:
+        cursor.execute(
+            "SELECT COUNT(*) FROM store_actions WHERE tenant_id = ? AND action_type = 'qr_scan'",
+            (tid,),
+        )
+    qr_scans = cursor.fetchone()[0]
+
     conn.close()
 
     tenant_name = current_tenant()[2]
@@ -1918,7 +2094,194 @@ def analytics():
         inventory_available=inventory_available,
         inventory_sold=inventory_sold,
         inventory_value=inventory_value,
+        directions_clicks=directions_clicks,
+        call_clicks=call_clicks,
+        qr_scans=qr_scans,
     )
+
+
+@app.route("/gbp-checklist")
+@login_required
+def gbp_checklist():
+    """Guided checklist to help store owners optimize their Google Business Profile."""
+    tid = current_tenant_id()
+    info = get_tenant_business_info(tid) or {}
+    tenant_name = current_tenant()[2]
+
+    return render_template(
+        "gbp_checklist.html",
+        tenant_name=tenant_name,
+        info=info,
+    )
+
+# ---------------------------------------------------------------
+# TIER 3 — QR CODE ROUTES
+# ---------------------------------------------------------------
+@app.route("/qr-codes")
+@login_required
+def qr_codes_list():
+    """Manage QR codes for the current tenant."""
+    tid = current_tenant_id()
+    tenant_name = current_tenant()[2]
+
+    # Ensure at least one QR exists
+    _get_or_create_primary_qr(tid)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, token, label, created_at FROM qr_codes WHERE tenant_id = ? ORDER BY id ASC",
+        (tid,),
+    )
+    qr_rows = cursor.fetchall()
+    conn.close()
+
+    base_url = _get_qr_base_url()
+
+    # Build render-ready list
+    qr_codes = []
+    for qr_id, token, label, created_at in qr_rows:
+        qr_codes.append({
+            "id": qr_id,
+            "token": token,
+            "label": label or "Untitled",
+            "created_at": created_at,
+            "url": f"{base_url}/qr/{token}",
+            "is_primary": (qr_id == qr_rows[0][0]),
+        })
+
+    return render_template(
+        "qr_codes.html",
+        tenant_name=tenant_name,
+        qr_codes=qr_codes,
+    )
+
+
+@app.route("/qr-codes/create", methods=["POST"])
+@login_required
+def qr_codes_create():
+    tid = current_tenant_id()
+    label = request.form.get("label", "").strip() or "Untitled"
+
+    token = _generate_qr_token()
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO qr_codes (tenant_id, token, label, created_at) VALUES (?, ?, ?, ?)",
+        (tid, token, label[:60], datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+    )
+    conn.commit()
+    conn.close()
+
+    flash(f'QR code "{label}" created.')
+    return redirect("/qr-codes")
+
+
+@app.route("/qr-codes/<int:qr_id>/delete", methods=["POST"])
+@login_required
+def qr_codes_delete(qr_id):
+    tid = current_tenant_id()
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Prevent deleting the primary (first) QR
+    cursor.execute("SELECT COUNT(*) FROM qr_codes WHERE tenant_id = ?", (tid,))
+    total = cursor.fetchone()[0]
+
+    if total <= 1:
+        conn.close()
+        flash("Cannot delete the last QR code.")
+        return redirect("/qr-codes")
+
+    cursor.execute(
+        "DELETE FROM qr_codes WHERE id = ? AND tenant_id = ?",
+        (qr_id, tid),
+    )
+    conn.commit()
+    conn.close()
+
+    flash("QR code deleted.")
+    return redirect("/qr-codes")
+
+
+@app.route("/qr-codes/<int:qr_id>/download")
+@login_required
+def qr_codes_download(qr_id):
+    tid = current_tenant_id()
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT token, label FROM qr_codes WHERE id = ? AND tenant_id = ?",
+        (qr_id, tid),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        flash("QR code not found.")
+        return redirect("/qr-codes")
+
+    token, label = row
+    base_url = _get_qr_base_url()
+    target_url = f"{base_url}/qr/{token}"
+
+    buf = _generate_qr_png(target_url, box_size=12)
+    if not buf:
+        flash("QR code generation failed.")
+        return redirect("/qr-codes")
+
+    safe_label = "".join(c if c.isalnum() else "-" for c in (label or "qr"))
+    filename = f"qr-{safe_label}-{token}.png"
+
+    return send_file(
+        buf,
+        mimetype="image/png",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@app.route("/qr/<token>")
+def qr_scan(token):
+    """Handle a QR code scan — logs the scan and redirects to the tenant's storefront."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT tenant_id, label FROM qr_codes WHERE token = ?",
+        (token,),
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return render_template("404.html"), 404
+
+    tenant_id, label = row
+
+    # Log the scan as a store action
+    try:
+        cursor.execute(
+            "INSERT INTO store_actions (tenant_id, action_type, source, created_at) VALUES (?, ?, ?, ?)",
+            (
+                tenant_id,
+                "qr_scan",
+                f"qr:{label or 'unnamed'}"[:50],
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"[QR] Scan tracking failed: {e}")
+
+    conn.close()
+
+    # Redirect to the tenant's storefront
+    if tenant_id == 1:
+        return redirect("/royal-home")
+    elif tenant_id == 2:
+        return redirect("/clothing-demo")
+    return redirect("/")
 
 
 @app.route("/reservations/<int:reservation_id>/status/<status>", methods=["POST"])

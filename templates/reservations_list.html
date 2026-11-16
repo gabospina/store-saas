@@ -78,9 +78,24 @@
                     <div class="res-customer">
                         <p><strong>👤 {{ customer_name }}</strong></p>
                         <p>📞 <a href="tel:{{ phone }}">{{ phone }}</a></p>
-                        {% if email %}
-                            <p>✉️ <a href="mailto:{{ email }}">{{ email }}</a></p>
+                        {% if email %}<p>✉️ <a href="mailto:{{ email }}">{{ email }}</a></p>{% endif %}
+                    </div>
+
+                    <!-- Quick action buttons (Tier 1) -->
+                    <div class="res-quick-actions">
+                        {% if phone %}
+                        <a href="tel:{{ phone }}" class="res-quick-btn res-quick-call">
+                            📞 Call Customer
+                        </a>
                         {% endif %}
+                        {% if store_maps_url %}
+                        <a href="{{ store_maps_url }}" target="_blank" rel="noopener" class="res-quick-btn res-quick-map">
+                            📍 Store Location
+                        </a>
+                        {% endif %}
+                        <button type="button" class="res-quick-btn res-quick-copy" onclick="copyDirectionsLink(this)">
+                            🔗 Copy Maps Link
+                        </button>
                     </div>
 
                     {% if message %}
@@ -187,6 +202,21 @@ function openReplyModal(resId, customerName, customerEmail, productName) {
 function closeReplyModal() {
     document.getElementById("replyModal").style.display = "none";
     document.body.classList.remove("modal-open");
+}
+
+function copyDirectionsLink(btn) {
+    var mapsUrl = "{{ store_maps_url }}";
+    if (!mapsUrl) {
+        alert('Store location not configured.');
+        return;
+    }
+    navigator.clipboard.writeText(mapsUrl).then(function () {
+        var original = btn.innerHTML;
+        btn.innerHTML = '✓ Copied!';
+        setTimeout(function () { btn.innerHTML = original; }, 2000);
+    }).catch(function () {
+        prompt('Copy this link:', mapsUrl);
+    });
 }
 
 // Attach click handlers to all Reply buttons

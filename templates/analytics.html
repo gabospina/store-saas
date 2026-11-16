@@ -36,6 +36,12 @@
         <a href="/analytics?period=all" class="analytics-tab {% if period == 'all' %}active{% endif %}">All time</a>
     </div>
 
+    <div style="margin-bottom:24px;">
+        <a href="/gbp-checklist" class="btn" style="display:inline-block;background:#4285f4;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">
+            🎯 Improve Google Business Profile →
+        </a>
+    </div>
+
     <!-- ─── 4 Metric cards ─── -->
     <div class="analytics-metrics">
 
@@ -119,6 +125,27 @@
             <div class="metric-value">{{ returning_customers }}</div>
             <div class="metric-label">Returning Customers</div>
             <div class="metric-hint">Reserved more than once</div>
+        </div>
+
+        <div class="metric-card metric-directions">
+            <div class="metric-icon">📍</div>
+            <div class="metric-value">{{ directions_clicks }}</div>
+            <div class="metric-label">Directions Clicks</div>
+            <div class="metric-hint">Customers getting directions to your store</div>
+        </div>
+
+        <div class="metric-card metric-calls">
+            <div class="metric-icon">📞</div>
+            <div class="metric-value">{{ call_clicks }}</div>
+            <div class="metric-label">Call Clicks</div>
+            <div class="metric-hint">Customers calling from your storefront</div>
+        </div>
+
+            <div class="metric-card metric-qr">
+            <div class="metric-icon">📱</div>
+            <div class="metric-value">{{ qr_scans }}</div>
+            <div class="metric-label">QR Code Scans</div>
+            <div class="metric-hint">In-store scans linking to your site</div>
         </div>
 
     </div>

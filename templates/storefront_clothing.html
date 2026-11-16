@@ -104,7 +104,13 @@
     <div class="contact-details">
         <h3>We'd Love to See You</h3>
         <p>Come browse our latest arrivals or reserve an item online for pickup.</p>
-        <a href="tel:{{ whatsapp_number or '' }}" class="btn">Call Us</a>
+        <a href="tel:{{ whatsapp_number or '' }}"
+            class="btn"
+            data-track-action="call"
+            data-tenant-id="2"
+            onclick="trackStoreAction(this)">
+             📞 Call Us
+        </a>
     </div>
 
     <!-- Map: approximate service area, Hwy 40 & St. Jean -->
@@ -126,6 +132,17 @@
         crossorigin=""></script>
 
 <script>
+function trackStoreAction(el) {
+    var actionType = el.dataset.trackAction;
+    var tenantId = el.dataset.tenantId;
+    if (!actionType || !tenantId) return;
+    fetch('/api/track-action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action_type: actionType, tenant_id: parseInt(tenantId, 10), source: 'storefront'})
+    }).catch(function() {});
+}
+
 (function () {
     var mapEl = document.getElementById('storeMap');
     if (!mapEl || typeof L === 'undefined') {

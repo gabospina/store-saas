@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Codes — {{ tenant_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="container">
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for msg in messages %}
+          <div class="flash-msg">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="dashboard-header">
+        <h1>{{ tenant_name }} — QR Codes</h1>
+        <div>
+            <a href="/dashboard" class="inventory-btn">Dashboard</a>
+            <a href="/analytics" class="inventory-btn">Analytics</a>
+            <a href="/logout" class="inventory-btn">Logout</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📱 What Are QR Codes For?</h2>
+        <p>
+            Print your QR codes and place them where customers will see them:
+        </p>
+        <ul style="line-height:1.8;color:#333;margin:8px 0 16px 20px;">
+            <li><strong>On receipts</strong> — customers scan while still in your store</li>
+            <li><strong>On your storefront window</strong> — passersby can browse your full inventory</li>
+            <li><strong>On shelf tags</strong> — see more photos, sizes, or alternatives</li>
+            <li><strong>On business cards or flyers</strong> — one scan brings them to your site</li>
+            <li><strong>On packaging</strong> — customers scan when they get home, and come back</li>
+        </ul>
+        <p>
+            Every scan is logged as a <strong>"QR Code Scan"</strong> in your analytics, so you can see exactly how many customers came from each placement.
+        </p>
+        <p style="margin-top:12px;">
+            <strong>Pro tip:</strong> Create a separate QR code for each placement (Receipt, Window, Shelf) with its own label. Then compare which one brings the most customers in your Analytics page.
+        </p>
+    </div>
+
+    <!-- Create new QR code -->
+    <div class="card">
+        <h2>➕ Create a New QR Code</h2>
+        <form method="POST" action="/qr-codes/create" class="qr-create-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-row">
+                <div class="form-group" style="flex:1;">
+                    <label for="qrLabel">Label (where will you place it?)</label>
+                    <input
+                        type="text"
+                        id="qrLabel"
+                        name="label"
+                        placeholder="e.g., Receipt, Window, Shelf Tag A"
+                        maxlength="60"
+                        required>
+                </div>
+                <div class="form-group" style="flex:0 0 auto;">
+                    <label>&nbsp;</label>
+                    <button type="submit" class="upload-btn">Create QR Code</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- QR code list -->
+    <div class="card">
+        <h2>Your QR Codes ({{ qr_codes|length }})</h2>
+
+        <div class="qr-grid">
+            {% for qr in qr_codes %}
+            <div class="qr-card {% if qr.is_primary %}qr-primary{% endif %}">
+
+                <div class="qr-preview">
+                    <img
+                        src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={{ qr.url|urlencode }}"
+                        alt="QR code for {{ qr.label }}"
+                        width="200"
+                        height="200">
+                </div>
+
+                <div class="qr-info">
+                    <div class="qr-label">
+                        {{ qr.label }}
+                        {% if qr.is_primary %}
+                        <span class="qr-primary-badge">PRIMARY</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="qr-url">
+                        <code>{{ qr.url }}</code>
+                    </div>
+
+                    <div class="qr-created">
+                        Created {{ qr.created_at[:10] }}
+                    </div>
+                </div>
+
+                <div class="qr-actions">
+                    <a href="/qr-codes/{{ qr.id }}/download" class="qr-btn qr-btn-download">
+                        ⬇️ Download PNG
+                    </a>
+
+                    {% if not qr.is_primary %}
+                    <form method="POST" action="/qr-codes/{{ qr.id }}/delete"
+                          style="display:inline;"
+                          onsubmit="return confirm('Delete this QR code? Any printed copies will stop working.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="qr-btn qr-btn-delete">
+                            🗑️ Delete
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card" style="background:#f7f9fc;">
+        <h2>📊 Tracking Your QR Codes</h2>
+        <p>
+            Every scan is recorded in your <a href="/analytics">Analytics page</a> under
+            <strong>📱 QR Code Scans</strong>.
+        </p>
+        <p>
+            To see which placement works best, compare the scans on a weekly basis. If "Receipt" gets 30 scans
+            and "Window" gets 5, you know where to focus your printed materials.
+        </p>
+    </div>
+
+</div>
+
+</body>
+</html>
