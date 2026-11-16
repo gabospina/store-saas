@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings — {{ tenant_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="container">
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for msg in messages %}
+          <div class="flash-msg">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="dashboard-header">
+        <h1>{{ tenant_name }} — Settings</h1>
+        <div>
+            <a href="/dashboard" class="inventory-btn">Dashboard</a>
+            <a href="/analytics" class="inventory-btn">Analytics</a>
+            <a href="/logout" class="inventory-btn">Logout</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>⭐ Google Review Settings</h2>
+        <p>
+            Add your Google Review link here. When a customer completes a purchase, you'll be able to send them a one-click review request from the Reservations page.
+        </p>
+
+        <form method="POST" action="/settings">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <label for="google_review_url">Google Review URL</label>
+            <input
+                type="url"
+                id="google_review_url"
+                name="google_review_url"
+                value="{{ google_review_url }}"
+                placeholder="https://g.page/r/YOUR_BUSINESS_ID/review"
+                style="width:100%;max-width:600px;">
+
+            <p style="color:#666;font-size:0.88rem;margin-top:10px;">
+                <strong>How to find your review link:</strong>
+            </p>
+            <ol style="color:#555;font-size:0.9rem;line-height:1.8;">
+                <li>Open <a href="https://business.google.com" target="_blank" rel="noopener">Google Business Profile</a></li>
+                <li>Click <strong>"Get more reviews"</strong></li>
+                <li>Copy the short link (looks like <code>https://g.page/r/XXXXX/review</code>)</li>
+                <li>Paste it above → save</li>
+            </ol>
+
+            <button type="submit" class="save-btn" style="margin-top:16px;">
+                Save Settings
+            </button>
+        </form>
+    </div>
+
+    <div class="card" style="background:#f7f9fc;">
+        <h2>📊 Why Reviews Matter</h2>
+        <p>Google Reviews are one of the top-3 ranking factors for local search. A store with 50 reviews appears higher in "near me" searches than a store with 5 — which means <strong>more foot traffic</strong>.</p>
+        <p>When you send a review request from your Reservations page, the customer gets a friendly email with your Google review link. One click, one review, one more reason for Google to promote your store.</p>
+    </div>
+
+</div>
+
+</body>
+</html>

@@ -148,6 +148,13 @@
             <div class="metric-hint">In-store scans linking to your site</div>
         </div>
 
+            <div class="metric-card metric-review">
+            <div class="metric-icon">⭐</div>
+            <div class="metric-value">{{ review_requests_sent }}</div>
+            <div class="metric-label">Review Requests Sent</div>
+            <div class="metric-hint">Google reviews asked from customers</div>
+        </div>
+
     </div>
 
     <!-- ─── Inventory Health widget ─── -->
@@ -260,6 +267,24 @@
             {% else %}
                 <p class="no-data">No reservations in this period.</p>
             {% endif %}
+        </div>
+
+        <div class="analytics-top-lists">
+            <div class="card">
+                <h2>🔁 Top Returning Customers</h2>
+                {% if top_customers %}
+                    <ul class="top-list">
+                        {% for cust in top_customers %}
+                        <li>
+                            <span>{{ cust[1] or 'Customer' }}</span>
+                            <span class="top-list-count">{{ cust[2] }} visits</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="no-data">No repeat customers yet.</p>
+                {% endif %}
+            </div>
         </div>
 
     </div>

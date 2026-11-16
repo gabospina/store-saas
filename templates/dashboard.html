@@ -49,6 +49,7 @@
             </a>
             <a href="/analytics" class="inventory-btn">📊 Analytics</a>
             <a href="/qr-codes" class="inventory-btn">📱 QR Codes</a>
+            <a href="/settings" class="inventory-btn">⚙️ Settings</a>
             <a href="/inventory-list" class="inventory-btn">Inventory List</a>
             <a href="/sold-inventory" class="inventory-btn">Sold Inventory</a>
             <a href="/logout" class="inventory-btn">Logout</a>
@@ -193,6 +194,26 @@
     <!-- Current inventory grid                                    -->
     <!-- ========================================================= -->
     <div class="card">
+        {% if top_customers %}
+        <div class="card">
+            <h2>🔁 Top Customers</h2>
+            <p style="margin-top:-6px;color:#666;font-size:0.9rem;">These customers have reserved from you multiple times.</p>
+
+            <div class="top-customers-list">
+                {% for cust in top_customers %}
+                <div class="top-customer-row">
+                    <div class="top-customer-info">
+                        <strong>{{ cust[1] or 'Customer' }}</strong>
+                        <span class="top-customer-phone">📞 {{ cust[0] }}</span>
+                    </div>
+                    <div class="top-customer-visits">
+                        <span class="top-customer-badge">{{ cust[2] }} visits</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
 
         <h2>Current {{ bt.name }} Inventory</h2>
 

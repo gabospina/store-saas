@@ -695,6 +695,28 @@ def ensure_analytics_tables():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_tenant ON qr_codes(tenant_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_qr_token ON qr_codes(token)")
 
+        # Table 5: Tenant settings (key-value config, per tenant)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tenant_settings (
+            tenant_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT,
+            PRIMARY KEY (tenant_id, key)
+        )
+    """)
+
+    # Table 6: Review requests (audit trail)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS review_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL,
+            reservation_id INTEGER NOT NULL,
+            customer_email TEXT NOT NULL,
+            sent_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reviews_tenant ON review_requests(tenant_id, sent_at)")
+
     conn.commit()
     conn.close()
 
@@ -869,6 +891,95 @@ def _get_qr_base_url():
     if explicit:
         return explicit.rstrip("/")
     return get_base_url()
+
+# ---------------------------------------------------------------
+# PART 2 — SETTINGS + REVIEW BOOSTER HELPERS
+# ---------------------------------------------------------------
+def get_tenant_setting(tenant_id, key, default=""):
+    """Read a per-tenant setting, or return default."""
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT value FROM tenant_settings WHERE tenant_id = ? AND key = ?",
+        (tenant_id, key)
+    ).fetchone()
+    conn.close()
+    return row[0] if row else default
+
+
+def set_tenant_setting(tenant_id, key, value):
+    """Insert or update a per-tenant setting."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT 1 FROM tenant_settings WHERE tenant_id = ? AND key = ?",
+        (tenant_id, key)
+    )
+    if cursor.fetchone():
+        cursor.execute(
+            "UPDATE tenant_settings SET value = ? WHERE tenant_id = ? AND key = ?",
+            (value, tenant_id, key)
+        )
+    else:
+        cursor.execute(
+            "INSERT INTO tenant_settings (tenant_id, key, value) VALUES (?, ?, ?)",
+            (tenant_id, key, value)
+        )
+    conn.commit()
+    conn.close()
+
+
+def send_review_request_email(tenant_id, reservation_id, customer_name, customer_email):
+    """
+    Send a review request email to a customer.
+    Returns True on success, False otherwise. Never raises.
+    """
+    if not mail_configured():
+        return False
+    if not customer_email or "@" not in customer_email:
+        return False
+
+    review_url = get_tenant_setting(tenant_id, "google_review_url", "").strip()
+    if not review_url:
+        return False
+
+    info = get_tenant_business_info(tenant_id) or {}
+    store_name = info.get("name", "our store")
+
+    try:
+        subject = f"How was your experience at {store_name}?"
+        html = f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+            <h2 style="color:#003366;">Hi {customer_name},</h2>
+            <p>Thank you for choosing <strong>{store_name}</strong>! We hope you love your purchase.</p>
+            <p>Would you mind taking 30 seconds to share your experience on Google? Your review helps other customers find us — and it means a lot to a small business.</p>
+            <p style="margin:28px 0;text-align:center;">
+                <a href="{review_url}"
+                   style="display:inline-block;background:#4285f4;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:700;font-size:1rem;">
+                    ⭐ Leave a Google Review
+                </a>
+            </p>
+            <p style="color:#666;font-size:0.9rem;">It takes less than 30 seconds. Thank you!</p>
+            <p style="margin-top:24px;">Warmly,<br><strong>{store_name}</strong></p>
+            <hr style="border:1px solid #eee;margin:24px 0;">
+            <p style="color:#999;font-size:0.75rem;">You're receiving this because you recently shopped with us.</p>
+        </div>
+        """
+        msg = Message(subject=subject, recipients=[customer_email], html=html)
+        mail.send(msg)
+
+        # Log the request
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT INTO review_requests (tenant_id, reservation_id, customer_email, sent_at) VALUES (?, ?, ?, ?)",
+            (tenant_id, reservation_id, customer_email, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        )
+        conn.commit()
+        conn.close()
+
+        return True
+    except Exception as e:
+        print(f"[MAIL] Review request failed: {e}")
+        return False
 
 
 # ---------------------------------------------------------------
@@ -1687,6 +1798,17 @@ def dashboard():
     )
     tenants = cursor.fetchall()
 
+    cursor.execute("""
+        SELECT phone, MAX(customer_name), COUNT(*) as visits
+        FROM reservations
+        WHERE tenant_id = ? AND phone IS NOT NULL AND phone != ''
+        GROUP BY phone
+        HAVING COUNT(*) >= 2
+        ORDER BY visits DESC
+        LIMIT 5
+    """, (tid,))
+    top_customers = cursor.fetchall()
+
     conn.close()
 
     tenant_name = current_tenant()[2]
@@ -1706,6 +1828,7 @@ def dashboard():
         tenant_name=tenant_name,
         new_reservations_count=new_reservations_count,
         bt=bt,
+        top_customers=top_customers,
     )
 
 # ---------------------------------------------------------------
@@ -1720,6 +1843,7 @@ def reservations_list():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    # ── Load reservations by filter ──
     if status_filter in ("new", "contacted", "completed"):
         cursor.execute(
             "SELECT * FROM reservations WHERE tenant_id = ? AND status = ? ORDER BY id DESC",
@@ -1732,7 +1856,7 @@ def reservations_list():
         )
     reservations = cursor.fetchall()
 
-    # Counts by status
+    # ── Counts by status (for tabs) ──
     counts = {}
     for status_key in ("new", "contacted", "completed", "all"):
         if status_key == "all":
@@ -1744,19 +1868,33 @@ def reservations_list():
             )
         counts[status_key] = cursor.fetchone()[0]
 
-    # Look up product names
+    # ── Look up product names ──
     products_by_id = {}
     if reservations:
         ids = [r[1] for r in reservations if r[1]]
         if ids:
             placeholders = ",".join("?" * len(ids))
-            cursor.execute(f"SELECT id, product_name FROM inventory WHERE id IN ({placeholders})", ids)
-            products_by_id = {row[0]: row[1] for row in cursor.fetchall()}
+            cursor.execute(
+                f"SELECT id, product_name FROM inventory WHERE id IN ({placeholders})",
+                ids,
+            )
+        products_by_id = {row[0]: row[1] for row in cursor.fetchall()}
+
+    # ── Customer visit counts (for "Xth visit" badges) ──
+    cursor.execute(
+        """
+        SELECT phone, COUNT(*) FROM reservations
+        WHERE tenant_id = ? AND phone IS NOT NULL AND phone != ''
+        GROUP BY phone
+        """,
+        (tid,),
+    )
+    phone_visit_counts = {row[0]: row[1] for row in cursor.fetchall()}
 
     conn.close()
 
+    # ── Store info for quick actions (Tier 1) ──
     tenant_name = current_tenant()[2]
-
     info = get_tenant_business_info(tid) or {}
     store_maps_url = info.get("maps_url", "")
     store_phone = info.get("phone", "")
@@ -1770,8 +1908,8 @@ def reservations_list():
         tenant_name=tenant_name,
         store_maps_url=store_maps_url,
         store_phone=store_phone,
+        phone_visit_counts=phone_visit_counts,
     )
-
 
 # ---------------------------------------------------------------
 # ANALYTICS — Store insights dashboard
@@ -2063,6 +2201,31 @@ def analytics():
         )
     qr_scans = cursor.fetchone()[0]
 
+        # ── METRIC 14: Review requests sent ──
+    if cutoff_iso:
+        cursor.execute(
+            "SELECT COUNT(*) FROM review_requests WHERE tenant_id = ? AND sent_at >= ?",
+            (tid, cutoff_iso),
+        )
+    else:
+        cursor.execute(
+            "SELECT COUNT(*) FROM review_requests WHERE tenant_id = ?",
+            (tid,),
+        )
+    review_requests_sent = cursor.fetchone()[0]
+
+    # ── METRIC 15: Top returning customers ──
+    cursor.execute("""
+        SELECT phone, MAX(customer_name), COUNT(*) as visits
+        FROM reservations
+        WHERE tenant_id = ? AND phone IS NOT NULL AND phone != ''
+        GROUP BY phone
+        HAVING COUNT(*) >= 2
+        ORDER BY visits DESC, MAX(reservation_date) DESC
+        LIMIT 5
+    """, (tid,))
+    top_customers = cursor.fetchall()
+
     conn.close()
 
     tenant_name = current_tenant()[2]
@@ -2097,6 +2260,8 @@ def analytics():
         directions_clicks=directions_clicks,
         call_clicks=call_clicks,
         qr_scans=qr_scans,
+        review_requests_sent=review_requests_sent,
+        top_customers=top_customers,
     )
 
 
@@ -2113,6 +2278,76 @@ def gbp_checklist():
         tenant_name=tenant_name,
         info=info,
     )
+
+# ---------------------------------------------------------------
+# PART 2 — SETTINGS PAGE
+# ---------------------------------------------------------------
+@app.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    tid = current_tenant_id()
+    tenant_name = current_tenant()[2]
+
+    if request.method == "POST":
+        google_review_url = request.form.get("google_review_url", "").strip()
+
+        # Basic validation
+        if google_review_url and not google_review_url.startswith(("http://", "https://")):
+            flash("Review URL must start with http:// or https://")
+            return redirect("/settings")
+
+        set_tenant_setting(tid, "google_review_url", google_review_url)
+        flash("Settings saved.")
+        return redirect("/settings")
+
+    current_review_url = get_tenant_setting(tid, "google_review_url", "")
+
+    return render_template(
+        "settings.html",
+        tenant_name=tenant_name,
+        google_review_url=current_review_url,
+    )
+
+
+# ---------------------------------------------------------------
+# PART 2 — REVIEW BOOSTER
+# ---------------------------------------------------------------
+@app.route("/reservations/<int:reservation_id>/request-review", methods=["POST"])
+@login_required
+def reservation_request_review(reservation_id):
+    tid = current_tenant_id()
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT customer_name, email FROM reservations
+        WHERE id = ? AND tenant_id = ?
+    """, (reservation_id, tid))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        flash("Reservation not found.")
+        return redirect("/reservations")
+
+    customer_name, customer_email = row
+
+    if not customer_email or "@" not in customer_email:
+        flash("This customer did not provide an email address.")
+        return redirect("/reservations")
+
+    review_url = get_tenant_setting(tid, "google_review_url", "").strip()
+    if not review_url:
+        flash("Configure your Google Review URL in Settings first.")
+        return redirect("/settings")
+
+    if send_review_request_email(tid, reservation_id, customer_name, customer_email):
+        flash(f"Review request sent to {customer_name}.")
+    else:
+        flash("Could not send review request. Check your email configuration.")
+
+    return redirect("/reservations")
+
 
 # ---------------------------------------------------------------
 # TIER 3 — QR CODE ROUTES

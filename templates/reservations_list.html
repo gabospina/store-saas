@@ -76,7 +76,13 @@
                     <h3>{{ product_name }}</h3>
 
                     <div class="res-customer">
-                        <p><strong>👤 {{ customer_name }}</strong></p>
+                        <p>
+                            <strong>👤 {{ customer_name }}</strong>
+                            {% set visit_count = phone_visit_counts.get(phone, 0) if phone else 0 %}
+                            {% if visit_count >= 2 %}
+                                <span class="visit-badge">🔁 {{ visit_count }}× repeat customer</span>
+                            {% endif %}
+                        </p>
                         <p>📞 <a href="tel:{{ phone }}">{{ phone }}</a></p>
                         {% if email %}<p>✉️ <a href="mailto:{{ email }}">{{ email }}</a></p>{% endif %}
                     </div>
@@ -136,6 +142,14 @@
                             <form method="POST" action="/reservations/{{ res_id }}/status/new" class="inline-form">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="res-btn res-btn-reopen">Reopen</button>
+                            </form>
+                        {% endif %}
+
+                        {% if status == 'completed' and email %}
+                            <form method="POST" action="/reservations/{{ res_id }}/request-review" class="inline-form"
+                                onsubmit="return confirm('Send a Google review request to {{ customer_name }}?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="res-btn res-btn-review">⭐ Request Review</button>
                             </form>
                         {% endif %}
 
