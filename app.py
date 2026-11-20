@@ -382,9 +382,7 @@ def _delete_photo_files(full_name, thumb_name):
             pass
 
 
-# ---------------------------------------------------------------
-# ENSURE DATABASE + TABLES EXIST (needed on Render free tier)
-# ---------------------------------------------------------------
+
 # ---------------------------------------------------------------
 # ENSURE DATABASE + TABLES EXIST (needed on Render free tier)
 # ---------------------------------------------------------------
@@ -465,6 +463,47 @@ def ensure_database_exists():
     cursor.execute("PRAGMA table_info(inventory)")
     existing_columns = {row[1] for row in cursor.fetchall()}
 
+    # --------------------------------------------------
+    # Quantity tracking (Phase 1)
+    # --------------------------------------------------
+
+    if "quantity_total" not in existing_columns:
+        cursor.execute("""
+            ALTER TABLE inventory
+            ADD COLUMN quantity_total INTEGER NOT NULL DEFAULT 1
+        """)
+
+    if "quantity_available" not in existing_columns:
+        cursor.execute("""
+            ALTER TABLE inventory
+            ADD COLUMN quantity_available INTEGER NOT NULL DEFAULT 1
+        """)
+
+    if "quantity_sold" not in existing_columns:
+        cursor.execute("""
+            ALTER TABLE inventory
+            ADD COLUMN quantity_sold INTEGER NOT NULL DEFAULT 0
+        """)
+
+    cursor.execute("""
+        UPDATE inventory
+        SET
+            quantity_total = 1,
+            quantity_available = 1,
+            quantity_sold = 0
+        WHERE quantity_total IS NULL
+        OR quantity_available IS NULL
+        OR quantity_sold IS NULL
+    """)
+
+    cursor.execute("""
+        UPDATE inventory
+        SET
+            quantity_available = 0,
+            quantity_sold = 1
+        WHERE status = 'Sold'
+    """)
+
     if "tenant_id" not in existing_columns:
         # DEFAULT 1 means: every pre-existing row is automatically
         # assigned to Royal Home — no data loss, no manual backfill.
@@ -519,6 +558,37 @@ def ensure_database_exists():
               SELECT 1 FROM item_photos p WHERE p.inventory_id = i.id
           )
     """)
+
+    # ---- 11. NEW: `sales` table — one row per unit sold ----
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sales (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            inventory_id  INTEGER NOT NULL,
+            tenant_id     INTEGER NOT NULL DEFAULT 1,
+            product_name  TEXT,
+            brand         TEXT,
+            model         TEXT,
+            category      TEXT,
+            price         REAL,
+            sold_at       TEXT NOT NULL,
+            restored_at   TEXT,
+            FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sales_tenant
+        ON sales(tenant_id)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sales_inventory
+        ON sales(inventory_id)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sales_active
+        ON sales(tenant_id, restored_at)
+    """)
+
     backfill_rows = cursor.fetchall()
 
     for inv_id, photo_filename, tenant_id in backfill_rows:
@@ -1776,38 +1846,32 @@ def dashboard():
     """, (tid,))
     inventory = cursor.fetchall()
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM inventory WHERE status='Available' AND tenant_id = ?",
-        (tid,),
-    )
+    cursor.execute("""
+        SELECT COALESCE(SUM(quantity_available), 0)
+        FROM inventory WHERE tenant_id = ?
+    """, (tid,))
+
     available_count = cursor.fetchone()[0]
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM inventory WHERE status='Sold' AND tenant_id = ?",
-        (tid,),
-    )
+    cursor.execute("""
+        SELECT COALESCE(SUM(quantity_sold), 0) FROM inventory
+        WHERE tenant_id = ?
+    """, (tid,))
+
     sold_count = cursor.fetchone()[0]
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM inventory WHERE tenant_id = ?", (tid,)
-    )
+    cursor.execute("""
+        SELECT COALESCE(
+            SUM(quantity_total), 0) FROM inventory
+        WHERE tenant_id = ?
+    """, (tid,))
+
     total_count = cursor.fetchone()[0]
 
     cursor.execute(
         "SELECT id, slug, name, is_demo FROM tenants WHERE is_active = 1 ORDER BY id"
     )
     tenants = cursor.fetchall()
-
-    cursor.execute("""
-        SELECT phone, MAX(customer_name), COUNT(*) as visits
-        FROM reservations
-        WHERE tenant_id = ? AND phone IS NOT NULL AND phone != ''
-        GROUP BY phone
-        HAVING COUNT(*) >= 2
-        ORDER BY visits DESC
-        LIMIT 5
-    """, (tid,))
-    top_customers = cursor.fetchall()
 
     conn.close()
 
@@ -1828,7 +1892,6 @@ def dashboard():
         tenant_name=tenant_name,
         new_reservations_count=new_reservations_count,
         bt=bt,
-        top_customers=top_customers,
     )
 
 # ---------------------------------------------------------------
@@ -2215,15 +2278,29 @@ def analytics():
     review_requests_sent = cursor.fetchone()[0]
 
     # ── METRIC 15: Top returning customers ──
-    cursor.execute("""
-        SELECT phone, MAX(customer_name), COUNT(*) as visits
-        FROM reservations
-        WHERE tenant_id = ? AND phone IS NOT NULL AND phone != ''
-        GROUP BY phone
-        HAVING COUNT(*) >= 2
-        ORDER BY visits DESC, MAX(reservation_date) DESC
-        LIMIT 5
-    """, (tid,))
+    # Reuses cutoff_date computed at the top of this function,
+    # so it always matches the selected period.
+    if cutoff_date:
+        cursor.execute("""
+            SELECT phone, MAX(customer_name) AS name, COUNT(*) AS visits
+            FROM reservations
+            WHERE tenant_id = ? AND phone IS NOT NULL AND phone != ''
+              AND reservation_date >= ?
+            GROUP BY phone
+            HAVING COUNT(*) >= 2
+            ORDER BY visits DESC
+            LIMIT 5
+        """, (tid, cutoff_date))
+    else:
+        cursor.execute("""
+            SELECT phone, MAX(customer_name) AS name, COUNT(*) AS visits
+            FROM reservations
+            WHERE tenant_id = ? AND phone IS NOT NULL AND phone != ''
+            GROUP BY phone
+            HAVING COUNT(*) >= 2
+            ORDER BY visits DESC
+            LIMIT 5
+        """, (tid,))
     top_customers = cursor.fetchall()
 
     conn.close()
@@ -2626,6 +2703,7 @@ def upload():
     brand        = request.form.get("brand", "").strip()
     model        = request.form.get("model", "").strip()
     price_raw    = request.form.get("price", "").strip()
+    quantity_raw = request.form.get("quantity", "1").strip()
     category     = request.form.get("category", "").strip()
     condition    = request.form.get("condition", "").strip()
 
@@ -2635,8 +2713,13 @@ def upload():
 
     try:
         price = float(price_raw) if price_raw else 0.0
+        quantity = int(quantity_raw)
+        if quantity < 1:
+            raise ValueError
     except ValueError:
-        flash("Price must be a number.")
+        flash(
+            "Price and quantity must be valid numbers."
+        )
         return redirect("/dashboard")
 
     # ---- Validate category against the tenant's allowed list ----
@@ -2691,10 +2774,34 @@ def upload():
 
         cursor.execute("""
             INSERT INTO inventory
-            (product_name, brand, model, price, category, condition, photo, tenant_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (product_name, brand, model, price, category, condition,
-              primary_filename, tid))
+            (
+                product_name,
+                brand,
+                model,
+                price,
+                category,
+                condition,
+                photo,
+                tenant_id,
+                quantity_total,
+                quantity_available,
+                quantity_sold
+            )
+            VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            product_name,
+            brand,
+            model,
+            price,
+            category,
+            condition,
+            primary_filename,
+            tid,
+            quantity,
+            quantity,
+            0
+        ))
 
         inv_id = cursor.lastrowid
 
@@ -2807,11 +2914,16 @@ def update(item_id):
     brand        = request.form.get("brand", "").strip()
     model        = request.form.get("model", "").strip()
     price_raw    = request.form.get("price", "").strip()
+    quantity_total_raw = request.form.get("quantity_total", "1").strip()
     category     = request.form.get("category", "").strip()
     condition    = request.form.get("condition", "").strip()
 
     try:
         price = float(price_raw) if price_raw else 0.0
+        quantity_total = int(quantity_total_raw)
+        if quantity_total < 1:
+            raise ValueError
+
     except ValueError:
         flash("Price must be a number.")
         return redirect(f"/edit_inventory/{item_id}")
@@ -2837,10 +2949,41 @@ def update(item_id):
     cursor = conn.cursor()
 
     cursor.execute("""
-        UPDATE inventory
-        SET product_name=?, brand=?, model=?, price=?, category=?, condition=?
+        SELECT quantity_sold
+        FROM inventory
         WHERE id=? AND tenant_id=?
-    """, (product_name, brand, model, price, category, condition, item_id, tid))
+    """, (item_id, tid))
+    row = cursor.fetchone()
+    quantity_sold = row[0] if row else 0
+    quantity_available = max(
+        0,
+        quantity_total - quantity_sold
+    )
+
+    cursor.execute("""
+        UPDATE inventory
+        SET
+            product_name=?,
+            brand=?,
+            model=?,
+            price=?,
+            category=?,
+            condition=?,
+            quantity_total=?,
+            quantity_available=?
+        WHERE id=? AND tenant_id=?
+    """, (
+        product_name,
+        brand,
+        model,
+        price,
+        category,
+        condition,
+        quantity_total,
+        quantity_available,
+        item_id,
+        tid
+    ))
 
     conn.commit()
     conn.close()
@@ -2862,15 +3005,18 @@ def inventory_list():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # ---- Total count (for pagination math + "X items" display) ----
-    count_sql = "SELECT COUNT(*) FROM inventory" + where_sql.split(" ORDER BY ")[0]
-    cursor.execute(count_sql, params)
-    total_items = cursor.fetchone()[0]
-
-    # ---- Total price (across ALL matching rows, not just the page) ----
-    sum_sql = "SELECT COALESCE(SUM(price), 0) FROM inventory" + where_sql.split(" ORDER BY ")[0]
+    # ---- Totals across ALL matching rows (count + 4 sums, one query) ----
+    sum_sql = (
+        "SELECT "
+        "  COUNT(*), "
+        "  COALESCE(SUM(COALESCE(price,0) * COALESCE(quantity_total,0)), 0), "
+        "  COALESCE(SUM(quantity_available), 0), "
+        "  COALESCE(SUM(quantity_sold), 0), "
+        "  COALESCE(SUM(quantity_total), 0) "
+        "FROM inventory" + where_sql.split(" ORDER BY ")[0]
+    )
     cursor.execute(sum_sql, params)
-    total_price = cursor.fetchone()[0]
+    total_items, total_price, total_available, total_sold, total_units = cursor.fetchone()
 
     # ---- Page of rows ----
     page_sql = "SELECT * FROM inventory" + where_sql + " LIMIT ? OFFSET ?"
@@ -2904,6 +3050,9 @@ def inventory_list():
         inventory=inventory,
         total_items=total_items,
         total_price=total_price,
+        total_available=total_available,
+        total_sold=total_sold,
+        total_units=total_units,
         categories=categories,
         # filter/sort state (so the template can render the form and preserve it)
         filters=request.args.to_dict(),
@@ -3024,23 +3173,60 @@ def inventory_list_bulk():
 @app.route("/inventory-list-print")
 @login_required
 def inventory_list_print():
+
     tid = current_tenant_id()
 
     where_sql, params = _build_inventory_query(
-        "SELECT * FROM inventory", tid, request.args
+        "SELECT * FROM inventory",
+        tid,
+        request.args
     )
 
     conn = sqlite3.connect(DB_PATH)
+
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM inventory" + where_sql, params)
+
+    cursor.execute(
+        "SELECT * FROM inventory" + where_sql,
+        params
+    )
+
     inventory = cursor.fetchall()
+
+    total_items = len(inventory)
+
+    total_price = sum((row[4] or 0) * (row[11] or 0) for row in inventory)
+
+    total_available = sum(
+        (row[12] or 0)
+        for row in inventory
+    )
+
+    total_sold = sum(
+        (row[13] or 0)
+        for row in inventory
+    )
+
+    total_units = sum(
+        (row[11] or 0)
+        for row in inventory
+    )
+
     conn.close()
+
+    report_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     return render_template(
         "inventory_list_print.html",
         inventory=inventory,
         filters=request.args.to_dict(),
         tenant_name=current_tenant()[2],
+        total_items=total_items,
+        total_price=total_price,
+        total_available=total_available,
+        total_sold=total_sold,
+        total_units=total_units,
+        report_date=report_date,
     )
 
 
@@ -3052,29 +3238,105 @@ def export_excel():
     where_sql, params = _build_inventory_query(
         "SELECT * FROM inventory", tid, request.args
     )
-    # Export doesn't need ORDER BY or LIMIT — strip them
     where_no_order = where_sql.split(" ORDER BY ")[0]
 
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(
-        "SELECT product_name, brand, model, price, category, condition, status "
-        "FROM inventory" + where_no_order,
+        """
+        SELECT
+            id,
+            product_name,
+            brand,
+            model,
+            category,
+            price,
+            quantity_available,
+            quantity_sold,
+            quantity_total,
+            status
+        FROM inventory
+        """ + where_no_order,
         conn,
         params=params,
     )
+
+    df.columns = [
+        "ID",
+        "Product Name",
+        "Brand",
+        "Model",
+        "Category",
+        "Price",
+        "Available Units",
+        "Sold Units",
+        "Total Units",
+        "Status",
+    ]
+
+    summary_row = {
+        "ID": "",
+        "Product Name": "TOTALS",
+        "Brand": "",
+        "Model": "",
+        "Category": "",
+        "Price": (df["Price"].fillna(0) * df["Total Units"].fillna(0)).sum(),
+        "Available Units": df["Available Units"].sum(),
+        "Sold Units": df["Sold Units"].sum(),
+        "Total Units": df["Total Units"].sum(),
+        "Status": "",
+    }
+
+    df = pd.concat([df, pd.DataFrame([summary_row])], ignore_index=True)
     conn.close()
 
     from io import BytesIO
     buffer = BytesIO()
-    df.to_excel(buffer, index=False)
+
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Inventory")
+        worksheet = writer.sheets["Inventory"]
+
+        from openpyxl.styles import PatternFill, Font, Alignment
+
+        header_fill = PatternFill(start_color="003366", end_color="003366", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True)
+        center_align = Alignment(horizontal="center")
+
+        for cell in worksheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = center_align
+
+        column_widths = {
+            "A": 8,   # ID
+            "B": 30,  # Product
+            "C": 20,  # Brand
+            "D": 20,  # Model
+            "E": 20,  # Category
+            "F": 12,  # Price
+            "G": 15,  # Available
+            "H": 15,  # Sold
+            "I": 15,  # Total
+            "J": 15,  # Status
+        }
+        for col, width in column_widths.items():
+            worksheet.column_dimensions[col].width = width
+
+        for row in worksheet.iter_rows(min_row=2):
+            row[0].alignment = center_align  # ID
+            row[6].alignment = center_align  # Available
+            row[7].alignment = center_align  # Sold
+            row[8].alignment = center_align  # Total
+            row[9].alignment = center_align  # Status
+            row[5].number_format = "$#,##0.00"  # Price
+
     buffer.seek(0)
 
-    # Filename reflects filter state so downloads are distinguishable
     ts = datetime.now().strftime("%Y-%m-%d_%H%M")
-    if request.args:
-        filename = f"inventory_filtered_{ts}.xlsx"
-    else:
-        filename = f"inventory_export_{ts}.xlsx"
+    filename = (
+        f"inventory_filtered_{ts}.xlsx" if request.args
+        else f"inventory_export_{ts}.xlsx"
+    )
 
     return send_file(
         buffer,
@@ -3082,7 +3344,6 @@ def export_excel():
         download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-
 # ---------------------------------------------------------------
 # IMPORT EXCEL — now with UPSERT
 # Natural key: product_name + model (case-insensitive)
@@ -3091,91 +3352,296 @@ def export_excel():
 @login_required
 @limiter.limit("10 per hour")
 def import_excel():
-    tid = current_tenant_id()
-    file = request.files.get("excel_file")
+    import math
 
+    tid = current_tenant_id()
+    bt  = current_business_type_config()
+
+    file = request.files.get("excel_file")
     if not file or file.filename == "":
         return redirect("/dashboard")
 
-    df = pd.read_excel(file)
+    # ---- Read the workbook ----
+    try:
+        df = pd.read_excel(file)
+    except Exception:
+        flash("Could not read the Excel file.")
+        return redirect("/inventory-list")
+
+    # ---- Required columns (ID is mandatory to prevent duplicate floods) ----
+    required_cols = [
+        "ID", "Product Name", "Brand", "Model", "Category",
+        "Price", "Available Units", "Sold Units",
+    ]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        flash(
+            "Import failed — missing column(s): "
+            + ", ".join(missing)
+            + ". Please re-export the inventory from this site "
+              "(the new export includes an ID column), then edit and re-import."
+        )
+        return redirect("/inventory-list")
+
+    # ---- Normalizer: NaN / None / "nan" / "None" / "null" / "" → "" ----
+    def norm(v):
+        if v is None:
+            return ""
+        if isinstance(v, float) and math.isnan(v):
+            return ""
+        s = str(v).strip()
+        if s.lower() in ("", "nan", "none", "null", "nat"):
+            return ""
+        return s
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     inserted = 0
-    updated = 0
+    updated  = 0
+    skipped  = 0
+    errors   = []
 
-    for _, row in df.iterrows():
-        product_name = str(row.get("product_name", "")).strip()
-        model = str(row.get("model", "")).strip()
-
-        if not product_name:
+    # ---- Pass 1: detect duplicate IDs inside the file ----
+    seen_ids = {}
+    for idx, row in df.iterrows():
+        row_num = int(idx) + 2
+        raw_id = norm(row.get("ID", ""))
+        if raw_id == "":
             continue
+        try:
+            int_id = int(float(raw_id))
+        except (TypeError, ValueError):
+            errors.append(f"Row {row_num}: ID '{raw_id}' is not a number.")
+            continue
+        if int_id in seen_ids:
+            errors.append(
+                f"Row {row_num}: duplicate ID {int_id} "
+                f"(also on row {seen_ids[int_id]})."
+            )
+        else:
+            seen_ids[int_id] = row_num
 
-        cursor.execute("""
-            SELECT id FROM inventory
-            WHERE LOWER(product_name) = LOWER(?)
-              AND LOWER(model) = LOWER(?)
-              AND tenant_id = ?
-        """, (product_name, model, tid))
+    if errors:
+        conn.close()
+        flash(
+            "Import failed — "
+            + " | ".join(errors[:5])
+            + (" …" if len(errors) > 5 else "")
+            + ". No changes were saved."
+        )
+        return redirect("/inventory-list")
 
-        existing = cursor.fetchone()
+    # ---- Pass 2: write (all-or-nothing) ----
+    try:
+        for idx, row in df.iterrows():
+            row_num = int(idx) + 2
 
-        if existing:
+            product_name = norm(row.get("Product Name", ""))
+
+            # Skip the exported TOTALS row and fully blank rows
+            if product_name.upper() == "TOTALS":
+                skipped += 1
+                continue
+            if all(norm(row.get(c, "")) == "" for c in df.columns):
+                skipped += 1
+                continue
+
+            if not product_name:
+                errors.append(f"Row {row_num}: Product Name is required.")
+                continue
+
+            brand    = norm(row.get("Brand", ""))
+            model    = norm(row.get("Model", ""))
+            category = norm(row.get("Category", ""))
+
+            # Category must be in the tenant's allowed list (matches /upload)
+            if category and category not in bt["categories"]:
+                errors.append(f"Row {row_num}: unknown category '{category}'.")
+                continue
+
+            # Model must be in the allowed list when select-type
+            if (
+                bt["model_type"] == "select"
+                and model
+                and model not in bt["model_options"]
+            ):
+                errors.append(
+                    f"Row {row_num}: unknown {bt['model_label']} '{model}'."
+                )
+                continue
+
+            # ---- Numbers ----
+            try:
+                price = float(norm(row.get("Price", "")) or 0)
+                if price < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append(f"Row {row_num}: invalid price.")
+                continue
+
+            try:
+                qty_avail = int(float(norm(row.get("Available Units", "")) or 0))
+                qty_sold  = int(float(norm(row.get("Sold Units", ""))      or 0))
+                if qty_avail < 0 or qty_sold < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append(f"Row {row_num}: invalid quantities.")
+                continue
+
+            qty_total  = qty_avail + qty_sold
+            new_status = "Sold" if qty_avail <= 0 else "Available"
+
+            raw_id = norm(row.get("ID", ""))
+
+            # ============ INSERT (blank ID) ============
+            if raw_id == "":
+                sold_date_val = (
+                    datetime.now().strftime("%Y-%m-%d")
+                    if new_status == "Sold" else None
+                )
+                cursor.execute("""
+                    INSERT INTO inventory
+                    (product_name, brand, model, price, category,
+                     condition, photo, status, sold_date,
+                     tenant_id, quantity_total, quantity_available, quantity_sold)
+                    VALUES (?, ?, ?, ?, ?, '', 'no-image.png', ?, ?, ?, ?, ?, ?)
+                """, (
+                    product_name, brand, model, price, category,
+                    new_status, sold_date_val,
+                    tid, qty_total, qty_avail, qty_sold,
+                ))
+                inserted += 1
+                continue
+
+            # ============ UPDATE (known ID) ============
+            int_id = int(float(raw_id))
+            cursor.execute(
+                "SELECT status, sold_date FROM inventory "
+                "WHERE id = ? AND tenant_id = ?",
+                (int_id, tid),
+            )
+            existing = cursor.fetchone()
+
+            if not existing:
+                errors.append(
+                    f"Row {row_num}: ID {int_id} not found for your tenant."
+                )
+                continue
+
+            old_status, old_sold_date = existing
+
+            # sold_date rules
+            if new_status == "Sold" and old_status != "Sold":
+                sold_date_val = datetime.now().strftime("%Y-%m-%d")
+            elif new_status == "Available" and old_status == "Sold":
+                sold_date_val = None
+            else:
+                sold_date_val = old_sold_date
+
             cursor.execute("""
                 UPDATE inventory
-                SET brand=?, price=?, category=?, condition=?
-                WHERE id=? AND tenant_id=?
+                SET product_name = ?, brand = ?, model = ?, price = ?,
+                    category = ?, status = ?, sold_date = ?,
+                    quantity_total = ?, quantity_available = ?, quantity_sold = ?
+                WHERE id = ? AND tenant_id = ?
             """, (
-                row.get("brand", ""),
-                row.get("price", ""),
-                row.get("category", ""),
-                row.get("condition", ""),
-                existing[0],
-                tid,
+                product_name, brand, model, price, category,
+                new_status, sold_date_val,
+                qty_total, qty_avail, qty_sold,
+                int_id, tid,
             ))
             updated += 1
-        else:
-            cursor.execute("""
-                INSERT INTO inventory
-                (product_name, brand, model, price, category, condition, photo, status, tenant_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                product_name,
-                row.get("brand", ""),
-                model,
-                row.get("price", ""),
-                row.get("category", ""),
-                row.get("condition", ""),
-                "no-image.png",
-                "Available",
-                tid,
-            ))
-            inserted += 1
+
+    except Exception as exc:
+        conn.rollback()
+        conn.close()
+        flash(f"Import failed: {exc}. No changes were saved.")
+        return redirect("/inventory-list")
+
+    # ---- If any row produced a validation error, roll everything back ----
+    if errors:
+        conn.rollback()
+        conn.close()
+        flash(
+            "Import failed — "
+            + " | ".join(errors[:5])
+            + (" …" if len(errors) > 5 else "")
+            + ". No changes were saved."
+        )
+        return redirect("/inventory-list")
 
     conn.commit()
     conn.close()
 
-    flash(f"Imported: {inserted} new, {updated} updated.")
+    msg = f"Imported: {inserted} new, {updated} updated"
+    if skipped:
+        msg += f", {skipped} skipped"
+    msg += "."
+    if inserted:
+        msg += (
+            " ⚠ Verify the new rows if you meant to update existing items "
+            "— blank ID = new product."
+        )
+    flash(msg)
     return redirect("/inventory-list")
-
 
 # These three were restored
 @app.route("/mark-sold/<int:item_id>", methods=["POST"])
 @login_required
 def mark_sold(item_id):
     tid = current_tenant_id()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    today   = now_str[:10]
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT product_name, brand, model, category, price, quantity_available
+        FROM inventory WHERE id = ? AND tenant_id = ?
+    """, (item_id, tid))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        flash("Product not found.")
+        return redirect("/dashboard")
+
+    pn, brand, model, cat, price, available = row
+
+    if available <= 0:
+        conn.close()
+        flash("No available units remaining.")
+        return redirect("/dashboard")
+
+    # Atomic inventory update
     cursor.execute("""
         UPDATE inventory
-        SET status='Sold', sold_date=?
-        WHERE id=? AND tenant_id=?
-    """, (datetime.now().strftime("%Y-%m-%d"), item_id, tid))
+        SET quantity_available = quantity_available - 1,
+            quantity_sold      = quantity_sold + 1,
+            status = CASE WHEN quantity_available - 1 <= 0 THEN 'Sold' ELSE 'Available' END,
+            sold_date = ?
+        WHERE id = ? AND tenant_id = ? AND quantity_available > 0
+    """, (today, item_id, tid))
+
+    if cursor.rowcount == 0:
+        conn.rollback()
+        conn.close()
+        flash("No available units remaining.")
+        return redirect("/dashboard")
+
+    # Record this individual sale
+    cursor.execute("""
+        INSERT INTO sales
+            (inventory_id, tenant_id, product_name, brand, model, category, price, sold_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (item_id, tid, pn, brand, model, cat, price, now_str))
+
     conn.commit()
     conn.close()
+    flash("1 unit sold.")
     return redirect("/dashboard")
-
 
 @app.route("/sold-inventory")
 @login_required
@@ -3183,31 +3649,145 @@ def sold_inventory():
     tid = current_tenant_id()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+
+    # One row per product (grouped), with live photo joined from inventory
     cursor.execute("""
-        SELECT *
-        FROM inventory
-        WHERE status='Sold' AND tenant_id = ?
-        ORDER BY sold_date DESC
+        SELECT
+            s.inventory_id,
+            s.product_name,
+            s.brand,
+            s.model,
+            s.category,
+            s.price,
+            COUNT(*)          AS total_sales,
+            MAX(s.sold_at)    AS last_sale_at,
+            MAX(i.photo)      AS photo
+        FROM sales s
+        LEFT JOIN inventory i ON i.id = s.inventory_id
+        WHERE s.tenant_id = ? AND s.restored_at IS NULL
+        GROUP BY s.inventory_id
+        ORDER BY last_sale_at DESC
     """, (tid,))
-    inventory = cursor.fetchall()
+    grouped = cursor.fetchall()
+
+    inventory = []
+    for row in grouped:
+        inv_id = row[0]
+
+        cursor.execute("""
+            SELECT id, sold_at, price
+            FROM sales
+            WHERE inventory_id = ? AND tenant_id = ? AND restored_at IS NULL
+            ORDER BY sold_at DESC, id DESC
+        """, (inv_id, tid))
+        sales = cursor.fetchall()
+
+        inventory.append({
+            "inventory_id": inv_id,
+            "product_name": row[1] or "(deleted product)",
+            "brand":        row[2] or "",
+            "model":        row[3] or "",
+            "category":     row[4] or "",
+            "price":        row[5] or 0,
+            "total_sales":  row[6],
+            "last_sale_at": row[7],
+            "photo":        row[8] or "",
+            "sales":        sales,
+        })
+
     conn.close()
     return render_template("sold_inventory.html", inventory=inventory)
 
 
+# ---- Restore ONE sale (per-sale button in the nested list) ----
+@app.route("/restore-sale/<int:sale_id>", methods=["POST"])
+@login_required
+def restore_sale(sale_id):
+    tid = current_tenant_id()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT inventory_id FROM sales
+        WHERE id = ? AND tenant_id = ? AND restored_at IS NULL
+    """, (sale_id, tid))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        flash("Sale not found or already restored.")
+        return redirect("/sold-inventory")
+
+    inv_id = row[0]
+
+    cursor.execute("""
+        UPDATE sales SET restored_at = ? WHERE id = ? AND tenant_id = ?
+    """, (now_str, sale_id, tid))
+
+    cursor.execute("""
+        UPDATE inventory
+        SET quantity_available = quantity_available + 1,
+            quantity_sold      = quantity_sold - 1,
+            status             = 'Available'
+        WHERE id = ? AND tenant_id = ?
+    """, (inv_id, tid))
+
+    # If no more sold units remain, clear sold_date
+    cursor.execute("""
+        UPDATE inventory
+        SET sold_date = NULL
+        WHERE id = ? AND tenant_id = ? AND quantity_sold <= 0
+    """, (inv_id, tid))
+
+    conn.commit()
+    conn.close()
+    flash("1 sale restored to available inventory.")
+    return redirect("/sold-inventory")
+
+
+# ---- Restore ALL sales for one product (product-level "Restore All" button) ----
 @app.route("/restore/<int:item_id>", methods=["POST"])
 @login_required
 def restore(item_id):
     tid = current_tenant_id()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+
+    # Count active sales first (so we know how many to return)
+    cursor.execute("""
+        SELECT COUNT(*) FROM sales
+        WHERE inventory_id = ? AND tenant_id = ? AND restored_at IS NULL
+    """, (item_id, tid))
+    active_count = cursor.fetchone()[0]
+
+    if active_count == 0:
+        conn.close()
+        flash("No active sales to restore.")
+        return redirect("/sold-inventory")
+
+    cursor.execute("""
+        UPDATE sales SET restored_at = ?
+        WHERE inventory_id = ? AND tenant_id = ? AND restored_at IS NULL
+    """, (now_str, item_id, tid))
+
     cursor.execute("""
         UPDATE inventory
-        SET status='Available', sold_date=NULL
-        WHERE id=? AND tenant_id=?
-    """, (item_id, tid))
+        SET quantity_available = quantity_available + ?,
+            quantity_sold      = 0,
+            status             = 'Available',
+            sold_date          = NULL
+        WHERE id = ? AND tenant_id = ?
+    """, (active_count, item_id, tid))
+
     conn.commit()
     conn.close()
+    flash(f"Restored {active_count} sale(s) to available inventory.")
     return redirect("/sold-inventory")
+
 
 # ---------------------------------------------------------------
 # UPLOAD PHOTO for rows that had "no-image.png"

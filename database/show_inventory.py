@@ -10,10 +10,11 @@ cursor.execute("""
     SELECT
         id,
         product_name,
-        status,
-        sold_date,
-        photo
+        quantity_total,
+        quantity_available,
+        quantity_sold
     FROM inventory
+    ORDER BY id DESC
 """)
 
 for row in cursor.fetchall():

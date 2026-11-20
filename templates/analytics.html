@@ -272,15 +272,24 @@
         <div class="analytics-top-lists">
             <div class="card">
                 <h2>🔁 Top Returning Customers</h2>
+                <p style="margin-top:-6px;color:#666;font-size:0.9rem;">
+                    These customers have reserved from you multiple times.
+                </p>
+
                 {% if top_customers %}
-                    <ul class="top-list">
+                    <div class="top-customers-list">
                         {% for cust in top_customers %}
-                        <li>
-                            <span>{{ cust[1] or 'Customer' }}</span>
-                            <span class="top-list-count">{{ cust[2] }} visits</span>
-                        </li>
+                        <div class="top-customer-row">
+                            <div class="top-customer-info">
+                                <strong>{{ cust[1] or 'Customer' }}</strong>
+                                <span class="top-customer-phone">📞 {{ cust[0] }}</span>
+                            </div>
+                            <div class="top-customer-visits">
+                                <span class="top-customer-badge">{{ cust[2] }} visits</span>
+                            </div>
+                        </div>
                         {% endfor %}
-                    </ul>
+                    </div>
                 {% else %}
                     <p class="no-data">No repeat customers yet.</p>
                 {% endif %}

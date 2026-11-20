@@ -1,60 +1,36 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discount Appliance Outlet</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+{% extends "base.html" %}
 
-{% if local_schema %}
-<script type="application/ld+json">
-{{ local_schema|tojson }}
-</script>
-{% endif %}
+{% block title %}Royal Home - Discount Appliances in DDO{% endblock %}
 
-</head>
-
-<body>
-<header>
-<nav>
-<div class="logo">
-Discount Appliance Outlet
-</div>
-<ul>
-<li><a href="#about">About</a></li>
-<li><a href="#products">Products</a></li>
-<li><a href="#gallery">Gallery</a></li>
-<li><a href="#contact">Contact</a></li>
-<li><a href="/store-saas">← Back to Store-SaaS</a></li>
-</ul>
-
-</nav>
-</header>
+{% block content %}
+<!-- Hero Section -->
 <section class="hero">
     <img src="{{ url_for('static', filename='images/store.jpg') }}" alt="Discount Appliance Outlet Store Front">
     <div class="hero-content">
         <h1>Quality Appliances at Discount Prices</h1>
         <p>
-        Save hundreds on refrigerators, washers, dryers,
-        ranges, and more.
+            Save hundreds on refrigerators, washers, dryers,
+            ranges, and more.
         </p>
         <a href="tel:+18777756257" class="btn">Call Us Today - (877) 775-6257</a>
     </div>
 </section>
 
+<!-- About Us -->
 <section id="about" class="about">
     <h2 class="section-title">About Us</h2>
     <p style="text-align:center;max-width:900px;margin:auto;">
-    For more than 5 years, we have helped families save money
-    on quality appliances. We specialize in refrigerators,
-    washers, dryers, ovens, and other household appliances
-    that may have minor cosmetic imperfections such as small dents
-    or scratches. These imperfections do not affect performance,
-    allowing our customers to purchase premium appliances at
-    substantially reduced prices.
+        For more than 5 years, we have helped families save money
+        on quality appliances. We specialize in refrigerators,
+        washers, dryers, ovens, and other household appliances
+        that may have minor cosmetic imperfections such as small dents
+        or scratches. These imperfections do not affect performance,
+        allowing our customers to purchase premium appliances at
+        substantially reduced prices.
     </p>
 </section>
 
+<!-- Why Choose Us -->
 <section>
     <h2 class="section-title">Why Customers Choose Us</h2>
     <div class="features">
@@ -66,12 +42,10 @@ Discount Appliance Outlet
             <h3>Trusted Brands</h3>
             <p>Quality appliances from leading manufacturers.</p>
         </div>
-
         <div class="feature-box">
             <h3>Local Business</h3>
             <p>Proudly serving our community for over five years.</p>
         </div>
-
         <div class="feature-box">
             <h3>Inventory Changes Weekly</h3>
             <p>New deals arrive regularly.</p>
@@ -79,6 +53,7 @@ Discount Appliance Outlet
     </div>
 </section>
 
+<!-- Products We Carry -->
 <section id="products">
     <h2 class="section-title">Products We Carry</h2>
     <div class="features">
@@ -86,17 +61,14 @@ Discount Appliance Outlet
             <h3>Refrigerators</h3>
             <p>French Door, Side-by-Side and Top Freezer Models.</p>
         </div>
-
         <div class="feature-box">
             <h3>Washers</h3>
             <p>Front Load and Top Load Machines.</p>
         </div>
-
         <div class="feature-box">
             <h3>Dryers</h3>
             <p>Electric and Gas Dryers Available.</p>
         </div>
-
         <div class="feature-box">
             <h3>Ranges & Ovens</h3>
             <p>Upgrade your kitchen for less.</p>
@@ -104,149 +76,81 @@ Discount Appliance Outlet
     </div>
 </section>
 
+<!-- Featured Inventory Gallery -->
 <section id="gallery">
-
-    <h2 class="section-title">
-        Featured Inventory
-    </h2>
-
+    <h2 class="section-title">Featured Inventory</h2>
     <div class="gallery">
-
         {% for item in inventory %}
-
         <div class="inventory-card">
-
-            <img
-            src="{{ url_for(
-                'static',
-                filename='images/uploads/' + item[7]
-            ) }}"
-            alt="{{ item[1] }}">
+            <img src="{{ url_for('static', filename='images/uploads/' + item[7]) }}" alt="{{ item[1] }}">
             <h3>{{ item[1] }}</h3>
             <p>${{ item[4] }}</p>
             <a href="/product/{{ item[0] }}" class="view-details-link">View details →</a>
-            <a href="/reserve_appliance/{{ item[0] }}" class="inventory-btn"> Reserve</a>
+            <a href="/reserve_appliance/{{ item[0] }}" class="inventory-btn">Reserve</a>
         </div>
         {% endfor %}
     </div>
-
 </section>
 
 <!-- SERVICES SECTION -->
 <section id="services" class="services">
     <h2 class="section-title">What We Offer</h2>
-
     <p style="text-align:center;max-width:900px;margin:0 auto 40px;">
         Buying an appliance is more than a transaction. We make it easy from
         showroom to your kitchen.
     </p>
-
     <div class="features">
-
         <div class="feature-box">
             <h3>🚚 Local Delivery</h3>
-            <p>
-                Fast delivery across the West Island — DDO, Pointe-Claire,
-                Pierrefonds, Kirkland, Beaconsfield, and surrounding areas.
-                Same-day options available on in-stock items.
-            </p>
+            <p>Fast delivery across the West Island — DDO, Pointe-Claire, Pierrefonds, Kirkland, Beaconsfield, and surrounding areas. Same-day options available on in-stock items.</p>
         </div>
-
         <div class="feature-box">
             <h3>🔧 Professional Installation</h3>
-            <p>
-                Our team connects water lines, vents, and power safely.
-                We haul away your old appliance at no extra charge.
-                Set up correctly the first time.
-            </p>
+            <p>Our team connects water lines, vents, and power safely. We haul away your old appliance at no extra charge. Set up correctly the first time.</p>
         </div>
-
         <div class="feature-box">
             <h3>🛡️ Warranty Support</h3>
-            <p>
-                Every appliance comes with a manufacturer-backed warranty.
-                If something goes wrong, call us first — we'll help you
-                navigate the claim directly.
-            </p>
+            <p>Every appliance comes with a manufacturer-backed warranty. If something goes wrong, call us first — we'll help you navigate the claim directly.</p>
         </div>
-
         <div class="feature-box">
             <h3>💬 Personal Service</h3>
-            <p>
-                Talk to a real person, not a call center. We answer questions
-                about sizing, brands, and setup before you buy — and after.
-            </p>
+            <p>Talk to a real person, not a call center. We answer questions about sizing, brands, and setup before you buy — and after.</p>
         </div>
-
     </div>
 </section>
 
 <!-- TESTIMONIALS SECTION -->
 <section id="testimonials" class="testimonials">
     <h2 class="section-title">What Our Customers Say</h2>
-
     <div class="features">
-
         <div class="feature-box testimonial">
-            <p class="quote">
-                "Needed a fridge fast — they delivered the same day to DDO
-                and installed it perfectly. Saved over $400 vs. the big box stores."
-            </p>
+            <p class="quote">"Needed a fridge fast — they delivered the same day to DDO and installed it perfectly. Saved over $400 vs. the big box stores."</p>
             <p class="author">— Marie L., Dollard-des-Ormeaux</p>
         </div>
-
         <div class="feature-box testimonial">
-            <p class="quote">
-                "The team helped me pick a washer that actually fit my tiny
-                laundry room. Real advice, not a sales pitch."
-            </p>
+            <p class="quote">"The team helped me pick a washer that actually fit my tiny laundry room. Real advice, not a sales pitch."</p>
             <p class="author">— Jean-Pierre R., Pierrefonds</p>
         </div>
-
         <div class="feature-box testimonial">
-            <p class="quote">
-                "Bought a scratch-and-dent oven — looks brand new and works
-                perfectly. They even took away my old one."
-            </p>
+            <p class="quote">"Bought a scratch-and-dent oven — looks brand new and works perfectly. They even took away my old one."</p>
             <p class="author">— Sophie M., Pointe-Claire</p>
         </div>
-
     </div>
 </section>
 
-
-<!-- ============================================================
-     Visit Our Store — Address, Hours, Interactive Map
-     ============================================================ -->
+<!-- Visit Our Store — Map + Info -->
 <section id="visit-us" class="visit-us">
-
     <h2 class="section-title">Visit Our Store</h2>
-
-    <p class="visit-us-subtitle">
-        Come see our selection in person — we're ready to help.
-    </p>
-
+    <p class="visit-us-subtitle">Come see our selection in person — we're ready to help.</p>
     <div class="visit-us-grid">
-
-        <!-- ======================================================== -->
-        <!-- LEFT: Interactive Map                                    -->
-        <!-- ======================================================== -->
         <div class="visit-us-map">
-            <div id="storeMap" class="store-map"
-                 role="img"
-                 aria-label="Map showing The Royal Home at 3237 Sources Blvd, Dollard-des-Ormeaux, Quebec"></div>
+            <div id="storeMap" class="store-map" role="img" aria-label="Map showing The Royal Home at 3237 Sources Blvd, Dollard-des-Ormeaux, Quebec"></div>
         </div>
-
-        <!-- ======================================================== -->
-        <!-- RIGHT: Store info card                                   -->
-        <!-- ======================================================== -->
         <div class="visit-us-info">
-
             <div class="store-brand">
                 <h3>The Royal Home</h3>
                 <p class="store-tagline">Discount Appliance Outlet</p>
             </div>
-
             <div class="info-row">
                 <span class="info-icon" aria-hidden="true">📍</span>
                 <div>
@@ -256,7 +160,6 @@ Discount Appliance Outlet
                     H9B 1Z6, Canada
                 </div>
             </div>
-
             <div class="info-row">
                 <span class="info-icon" aria-hidden="true">📞</span>
                 <div>
@@ -264,7 +167,6 @@ Discount Appliance Outlet
                     <a href="tel:+18777756257">(877) 775-6257</a>
                 </div>
             </div>
-
             <div class="info-row">
                 <span class="info-icon" aria-hidden="true">✉️</span>
                 <div>
@@ -272,7 +174,6 @@ Discount Appliance Outlet
                     <a href="mailto:info@theroyalhome.ca">info@theroyalhome.ca</a>
                 </div>
             </div>
-
             <div class="info-row">
                 <span class="info-icon" aria-hidden="true">🕒</span>
                 <div>
@@ -281,95 +182,36 @@ Discount Appliance Outlet
                     <span class="hours-line">Sunday: <em>Closed</em></span>
                 </div>
             </div>
-
-            <a
-                href="https://www.google.com/maps/dir/?api=1&destination=3237+Sources+Blvd,+Dollard-des-Ormeaux,+QC+H9B+1Z6,+Canada"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="visit-us-btn"
-                data-track-action="directions"
-                data-tenant-id="1"
-                onclick="trackStoreAction(this)">
-
+            <a href="https://www.google.com/maps/dir/?api=1&destination=3237+Sources+Blvd,+Dollard-des-Ormeaux,+QC+H9B+1Z6,+Canada"
+               target="_blank" rel="noopener noreferrer" class="visit-us-btn"
+               data-track-action="directions" data-tenant-id="1" onclick="trackStoreAction(this)">
                 Get Directions →
-
             </a>
-
         </div>
-
     </div>
-
 </section>
 
-<!-- ============================================================ -->
-<!-- Leaflet CSS (map library)                                    -->
-<!-- ============================================================ -->
-<link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin="">
-
-<!-- ============================================================ -->
-<!-- Leaflet JS + map initialization                              -->
-<!-- ============================================================ -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-        crossorigin=""></script>
+<!-- Leaflet CSS & JS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
 <script>
 (function () {
-    // Store location — exact address
-    var STORE_LAT = 45.4842;     // approximate lat for 3237 Sources Blvd, DDO
-    var STORE_LNG = -73.7883;    // approximate lng
-
+    var STORE_LAT = 45.4842;
+    var STORE_LNG = -73.7883;
     var mapEl = document.getElementById('storeMap');
     if (!mapEl || typeof L === 'undefined') return;
 
-    var map = L.map('storeMap', {
-        scrollWheelZoom: false,     // prevents page scroll from getting stuck in map
-        attributionControl: true,
-    }).setView([STORE_LAT, STORE_LNG], 12);
+    var map = L.map('storeMap', { scrollWheelZoom: false, attributionControl: true }).setView([STORE_LAT, STORE_LNG], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
 
-    // Tile layer (OpenStreetMap — free, no API key)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map);
+    var redIcon = L.divIcon({ className: 'custom-map-pin', html: '<div class="pin-dot"></div>', iconSize: [24, 24], iconAnchor: [12, 12] });
+    L.marker([STORE_LAT, STORE_LNG], { icon: redIcon }).addTo(map).bindPopup('<strong>The Royal Home</strong><br>3237 Sources Blvd<br>Dollard-des-Ormeaux, QC').openPopup();
 
-    // Custom red pin marker (no external image needed)
-    var redIcon = L.divIcon({
-        className: 'custom-map-pin',
-        html: '<div class="pin-dot"></div>',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-    });
-
-    var marker = L.marker([STORE_LAT, STORE_LNG], { icon: redIcon }).addTo(map);
-
-    marker.bindPopup(
-        '<strong>The Royal Home</strong><br>' +
-        '3237 Sources Blvd<br>' +
-        'Dollard-des-Ormeaux, QC<br>' +
-        '<a href="https://www.google.com/maps/dir/?api=1&destination=3237+Sources+Blvd,+Dollard-des-Ormeaux,+QC+H9B+1Z6" target="_blank" rel="noopener">Get Directions</a>'
-    ).openPopup();
-
-    // Enable scroll zoom only after user clicks the map
-    map.on('click', function () {
-        map.scrollWheelZoom.enable();
-        });
-        L.circle([STORE_LAT, STORE_LNG], {
-        radius: 5000,           // ~5 km service area
-        color: '#ff6600',
-        weight: 2,
-        fillColor: '#ff6600',
-        fillOpacity: 0.12,
-    }).addTo(map);
-
+    map.on('click', function () { map.scrollWheelZoom.enable(); });
+    L.circle([STORE_LAT, STORE_LNG], { radius: 5000, color: '#ff6600', weight: 2, fillColor: '#ff6600', fillOpacity: 0.12 }).addTo(map);
 })();
-</script>
 
-<script>
 function trackStoreAction(el) {
     var actionType = el.dataset.trackAction;
     var tenantId = el.dataset.tenantId;
@@ -381,78 +223,4 @@ function trackStoreAction(el) {
     }).catch(function() {});
 }
 </script>
-
-<footer>
-    <p>
-        © 2026 Discount Appliance Outlet. All Rights Reserved.
-        <a href="/login" class="hidden-link" title="">·</a>
-    </p>
-</footer>
-
-<!-- MANAGER LOGIN MODAL -->
-<div id="managerLoginModal" class="custom-modal">
-
-    <div class="modal-content">
-
-        <h2>Manager Login</h2>
-
-        <p id="loginError" style="color: #cc0000; display: none;">
-            Invalid username or password.
-        </p>
-
-        <form id="managerLoginForm" method="POST" action="/login">
-
-            <label for="modal_username">Username</label>
-            <input
-                type="text"
-                id="modal_username"
-                name="username"
-                required
-                autocomplete="username">
-
-            <label for="modal_password">Password</label>
-            <input
-                type="password"
-                id="modal_password"
-                name="password"
-                required
-                autocomplete="current-password">
-
-            <div class="modal-buttons">
-
-                <button
-                    type="button"
-                    class="cancel-btn"
-                    onclick="closeLoginModal()">
-                    Cancel
-                </button>
-
-                <button
-                    type="submit"
-                    class="confirm-btn">
-                    Login
-                </button>
-
-            </div>
-
-        </form>
-
-    </div>
-
-</div>
-
-<script
-    src="{{ url_for('static', filename='js/script.js') }}">
-</script>
-
-{% if whatsapp_number %}
-<a href="https://wa.me/{{ whatsapp_number|replace('+','')|replace(' ','')|replace('-','') }}?text={{ ('Hi! I am browsing Royal Home products')|urlencode }}"
-   target="_blank" rel="noopener"
-   class="whatsapp-float"
-   aria-label="Chat with us on WhatsApp">
-    <span class="whatsapp-float-icon">💬</span>
-    <span class="whatsapp-float-label">Chat with us</span>
-</a>
-{% endif %}
-</body>
-</html>
+{% endblock %}

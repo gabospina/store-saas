@@ -10,6 +10,39 @@
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
+<style>
+/* Compact 4-column upload form — inputs ~25% of container width */
+.upload-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin-bottom: 14px;
+}
+.upload-grid .form-group {
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+}
+.upload-grid .form-group label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.upload-grid .form-group input,
+.upload-grid .form-group select {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.upload-full { margin-bottom: 14px; }
+.upload-full > label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+</style>
+
 </head>
 
 <body>
@@ -110,13 +143,11 @@
     <!-- Upload form — labels driven by business type config       -->
     <!-- ========================================================= -->
     <div class="card">
-
         <h2>{{ bt.upload_title }}</h2>
-
-        <form
-            method="POST" action="/upload" enctype="multipart/form-data" id="uploadForm">
+        <form method="POST" action="/upload" enctype="multipart/form-data" id="uploadForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="form-row">
+
+            <div class="upload-grid">
                 <div class="form-group">
                     <label for="product_name">Product Name</label>
                     <input type="text" id="product_name" name="product_name" required>
@@ -125,12 +156,8 @@
                     <label for="brand">Brand</label>
                     <input type="text" id="brand" name="brand">
                 </div>
-            </div>
-
-            <div class="form-row">
                 <div class="form-group">
                     <label for="model">{{ bt.model_label }}</label>
-
                     {% if bt.model_type == 'select' %}
                         <select id="model" name="model" required>
                             <option value="">-- Select {{ bt.model_label }} --</option>
@@ -142,78 +169,56 @@
                         <input type="text" id="model" name="model">
                     {% endif %}
                 </div>
+                <div class="form-group">
+                    <label for="category">{{ bt.category_label }}</label>
+                    <select id="category" name="category" required>
+                        <option value="">-- Select {{ bt.category_label }} --</option>
+                        {% for cat in bt.categories %}
+                            <option value="{{ cat }}">{{ cat }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
 
                 <div class="form-group">
                     <label for="price">Price</label>
                     <input type="number" step="0.01" id="price" name="price">
                 </div>
+                <div class="form-group">
+                    <label for="quantity">Initial Quantity</label>
+                    <input type="number" id="quantity" name="quantity" min="1" value="1" required>
+                </div>
             </div>
 
-            <label for="category">{{ bt.category_label }}</label>
-            <select id="category" name="category" required>
-                <option value="">-- Select {{ bt.category_label }} --</option>
-                {% for cat in bt.categories %}
-                    <option value="{{ cat }}">{{ cat }}</option>
-                {% endfor %}
-            </select>
-
-            <label for="condition">{{ bt.condition_label }}</label>
-            <textarea
-                id="condition"
-                name="condition"
-                rows="4"
-                placeholder="{{ bt.condition_placeholder }}"></textarea>
-
-            <label for="photos">Photos (up to 8 — first photo becomes the primary)</label>
-
-            <div id="dropzone" class="photo-dropzone">
-                <input
-                    type="file"
-                    id="photos"
-                    name="photos"
-                    accept="image/jpeg,image/png,image/webp"
-                    multiple
-                    required
-                    style="display:none">
-                <p class="dropzone-hint">
-                    <strong>Drag photos here</strong><br>
-                    or <button type="button" class="dropzone-browse" onclick="document.getElementById('photos').click()">Browse files</button>
-                </p>
-                <p class="dropzone-note">JPG, PNG, or WEBP · max 8 MB each</p>
+            <div class="upload-full">
+                <label for="condition">{{ bt.condition_label }}</label>
+                <textarea id="condition" name="condition" rows="3" placeholder="{{ bt.condition_placeholder }}"></textarea>
             </div>
 
-            <div id="preview" class="photo-preview-grid"></div>
+            <div class="upload-full">
+                <label for="photos">Photos (up to 8 — first photo becomes the primary)</label>
+                <div id="dropzone" class="photo-dropzone">
+                    <input type="file" id="photos" name="photos"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple required style="display:none">
+                    <p class="dropzone-hint">
+                        <strong>Drag photos here</strong><br>
+                        or <button type="button" class="dropzone-browse"
+                            onclick="document.getElementById('photos').click()">Browse files</button>
+                    </p>
+                    <p class="dropzone-note">JPG, PNG, or WEBP · max 8 MB each</p>
+                </div>
+                <div id="preview" class="photo-preview-grid"></div>
+            </div>
 
             <button class="upload-btn" type="submit">{{ bt.upload_title }}</button>
-
         </form>
-
     </div>
 
     <!-- ========================================================= -->
     <!-- Current inventory grid                                    -->
     <!-- ========================================================= -->
     <div class="card">
-        {% if top_customers %}
-        <div class="card">
-            <h2>🔁 Top Customers</h2>
-            <p style="margin-top:-6px;color:#666;font-size:0.9rem;">These customers have reserved from you multiple times.</p>
-
-            <div class="top-customers-list">
-                {% for cust in top_customers %}
-                <div class="top-customer-row">
-                    <div class="top-customer-info">
-                        <strong>{{ cust[1] or 'Customer' }}</strong>
-                        <span class="top-customer-phone">📞 {{ cust[0] }}</span>
-                    </div>
-                    <div class="top-customer-visits">
-                        <span class="top-customer-badge">{{ cust[2] }} visits</span>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
+        
 
         <h2>Current {{ bt.name }} Inventory</h2>
 
@@ -248,6 +253,9 @@
                         <p><strong>Price:</strong> ${{ item[4] }}</p>
                         <p><strong>{{ bt.condition_label }}:</strong> {{ item[6] }}</p>
                         <p><strong>Status:</strong> {{ item[8] }}</p>
+                        <p><strong>Available Units:</strong>{{ item[12] }}</p>
+                        <p><strong>Sold Units:</strong>{{ item[13] }}</p>
+                        <p><strong>Total Units:</strong>{{ item[11] }}</p>
 
                         {% if item[7] == 'no-image.png' %}
                             <div class="missing-photo">
@@ -266,7 +274,7 @@
 
                     <form method="POST" action="/mark-sold/{{ item[0] }}" onsubmit="return openSoldModal(this)">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="sold-btn" type="submit">Sold</button>
+                        <button class="sold-btn" type="submit">Sell 1</button>
                     </form>
 
                     <form method="POST"
@@ -296,10 +304,11 @@
 <!-- ============================================================ -->
 <div id="soldModal" class="custom-modal">
     <div class="modal-content">
-        <h2>Mark {{ bt.name }} as Sold</h2>
+        <h2>Sell One Unit</h2>
         <p>
-            This {{ bt.name.lower() }} will be removed from Current Inventory
-            and stored in Sold Inventory for future reference.
+            One unit will be sold and deducted from available inventory.
+            When available inventory reaches zero, the product will
+            automatically move to Sold Inventory.
         </p>
         <div class="modal-buttons">
             <button class="cancel-btn" onclick="closeSoldModal()">Cancel</button>
@@ -365,6 +374,7 @@ document.getElementById("confirmDeleteBtn").addEventListener("click", function (
 // ---------- Tenant switcher (dev only) ----------
 function switchTenant(tid) {
     var form = document.getElementById('tenantSwitchForm');
+    if (!form) return;                     // ← add this line
     form.action = '/admin/switch-tenant/' + tid;
     form.submit();
 }

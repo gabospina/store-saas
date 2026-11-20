@@ -43,13 +43,17 @@
     tr:nth-child(even){
         background:#f5f5f5;
     }
-
+    .qty-col{
+        text-align:center;
+        font-weight:bold;
+    }
     .print-date{
         text-align:right;
         margin-bottom:15px;
         font-size:12px;
         color:#666;
     }
+
 
     @media print{
 
@@ -91,7 +95,7 @@
             class="company-logo">
 
         <h1>
-            Appliance Inventory Report
+            {{ tenant_name }} Inventory Report
         </h1>
 
     </div>
@@ -106,7 +110,9 @@
                 <th>Model</th>
                 <th>Price</th>
                 <th>Category</th>
-                <th>Condition</th>
+                <th class="qty-col">Available</th>
+                <th class="qty-col">Sold</th>
+                <th class="qty-col">Total</th>
                 <th>Status</th>
             </tr>
         </thead>
@@ -121,12 +127,48 @@
                 <td>{{ item[3] }}</td>
                 <td>${{ item[4] }}</td>
                 <td>{{ item[5] }}</td>
-                <td>{{ item[6] }}</td>
+                <td class="qty-col">{{ item[12] }}</td>
+                <td class="qty-col">{{ item[13] }}</td>
+                <td class="qty-col">{{ item[11] }}</td>
                 <td>{{ item[8] }}</td>
             </tr>
         {% endfor %}
         </tbody>
     </table>
+
+    <br>
+
+    <div
+        style="
+            margin-top:20px;
+            border-top:2px solid #003366;
+            padding-top:15px;
+            font-size:14px;
+            font-weight:bold;
+        ">
+
+        <p>
+        <strong>Report Generated:</strong>
+            <script>
+                document.write(
+                    new Date().toLocaleString()
+                );
+            </script>
+        </p>
+
+        <p style="font-weight:bold;">
+            Products: {{ total_items }}
+            •
+            Available: {{ total_available }}
+            •
+            Sold: {{ total_sold }}
+            •
+            Total Units: {{ total_units }}
+        </p>
+            Inventory Value:
+            ${{ "%.2f"|format(total_price or 0) }}
+        </p>
+    </div>
 
     <script>
         window.onload = function(){

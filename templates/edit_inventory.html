@@ -10,6 +10,38 @@
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
+<style>
+/* Compact 4-column edit form — inputs ~25% of container width */
+.edit-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin-bottom: 14px;
+}
+.edit-grid .form-group {
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+}
+.edit-grid .form-group label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.edit-grid .form-group input,
+.edit-grid .form-group select {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.edit-full { margin-bottom: 14px; }
+.edit-full > label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+</style>
 </head>
 
 <body>
@@ -37,33 +69,20 @@
         <form method="POST" action="/update/{{ item[0] }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-            <div class="form-row">
-
+            <!-- Row 1: Product Name | Brand | Model | Category -->
+            <div class="edit-grid">
                 <div class="form-group">
                     <label for="product_name">Product Name</label>
-                    <input
-                        type="text"
-                        id="product_name"
-                        name="product_name"
+                    <input type="text" id="product_name" name="product_name"
                         value="{{ item[1] if item[1] is not none else '' }}">
                 </div>
-
                 <div class="form-group">
                     <label for="brand">Brand</label>
-                    <input
-                        type="text"
-                        id="brand"
-                        name="brand"
+                    <input type="text" id="brand" name="brand"
                         value="{{ item[2] if item[2] is not none else '' }}">
                 </div>
-
-            </div>
-
-            <div class="form-row">
-
                 <div class="form-group">
                     <label for="model">{{ bt.model_label }}</label>
-
                     {% if bt.model_type == 'select' %}
                         <select id="model" name="model">
                             <option value="">-- Select {{ bt.model_label }} --</option>
@@ -72,46 +91,51 @@
                             {% endfor %}
                         </select>
                     {% else %}
-                        <input
-                            type="text"
-                            id="model"
-                            name="model"
+                        <input type="text" id="model" name="model"
                             value="{{ item[3] if item[3] is not none else '' }}">
                     {% endif %}
                 </div>
-
                 <div class="form-group">
-                    <label for="price">Price</label>
-                    <input
-                        type="number"
-                        step="0.01"
-                        id="price"
-                        name="price"
-                        value="{{ item[4] if item[4] is not none else '' }}">
+                    <label for="category">{{ bt.category_label }}</label>
+                    <select id="category" name="category">
+                        <option value="">-- Select {{ bt.category_label }} --</option>
+                        {% for cat in bt.categories %}
+                            <option value="{{ cat }}" {% if item[5] == cat %}selected{% endif %}>{{ cat }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
 
+                <!-- Row 2: Price | Total Units | Available Units | Sold Units -->
+                <div class="form-group">
+                    <label for="price">Price</label>
+                    <input type="number" step="0.01" id="price" name="price"
+                        value="{{ item[4] if item[4] is not none else '' }}">
+                </div>
+                <div class="form-group">
+                    <label for="quantity_total">Total Units</label>
+                    <input type="number" id="quantity_total" name="quantity_total"
+                        min="1" value="{{ item[11] }}">
+                </div>
+                <div class="form-group">
+                    <label for="quantity_available">Available Units</label>
+                    <input type="number" id="quantity_available" name="quantity_available"
+                        min="0" value="{{ item[12] }}">
+                </div>
+                <div class="form-group">
+                    <label for="quantity_sold_display">Sold Units</label>
+                    <input type="number" id="quantity_sold_display"
+                        value="{{ item[13] }}" readonly>
+                </div>
             </div>
 
-            <label for="category">{{ bt.category_label }}</label>
-            <select id="category" name="category">
-                <option value="">-- Select {{ bt.category_label }} --</option>
-                {% for cat in bt.categories %}
-                    <option value="{{ cat }}" {% if item[5] == cat %}selected{% endif %}>{{ cat }}</option>
-                {% endfor %}
-            </select>
-
-            <br><br>
-
-            <label for="condition">{{ bt.condition_label }}</label>
-            <textarea
-                id="condition"
-                name="condition"
-                placeholder="{{ bt.condition_placeholder }}">{{ item[6] if item[6] is not none else '' }}</textarea>
-
-            <br>
+            <!-- Condition — full width -->
+            <div class="edit-full">
+                <label for="condition">{{ bt.condition_label }}</label>
+                <textarea id="condition" name="condition" rows="3"
+                    placeholder="{{ bt.condition_placeholder }}">{{ item[6] if item[6] is not none else '' }}</textarea>
+            </div>
 
             <button class="save-btn" type="submit">{{ bt.save_title }}</button>
-
         </form>
 
         <!-- ================================================== -->

@@ -77,6 +77,10 @@
             <button class="upload-btn" type="submit">Import Excel</button>
         </form>
 
+        <small style="color:#666; display:block; margin-top:4px; font-size:0.8rem;">
+            Leave the ID column as-is. Blank ID = new product.
+        </small>
+
     </div>
 
     <!-- ============================== -->
@@ -183,8 +187,11 @@
                 <th>Product Name</th>
                 <th>Brand</th>
                 <th>Model</th>
-                <th class="price-col">Price</th>
                 <th>Category</th>
+                <th class="price-col">Price</th>
+                <th>Available</th>
+                <th>Sold</th>
+                <th>Total</th>
                 <th>Status</th>
             </tr>
         </thead>
@@ -197,8 +204,11 @@
                 <td>{{ item[1] }}</td>
                 <td>{{ item[2] }}</td>
                 <td>{{ item[3] }}</td>
-                <td class="price-col">${{ "%.2f"|format(item[4] or 0) }}</td>
                 <td>{{ item[5] }}</td>
+                <td class="price-col">${{ "%.2f"|format(item[4] or 0) }}</td>
+                <td>{{ item[12] }}</td>
+                <td>{{ item[13] }}</td>
+                <td>{{ item[11] }}</td>
                 <td>
                     {% if item[8] == 'Sold' %}
                         <span class="status-badge-sold">Sold</span>
@@ -211,9 +221,11 @@
         </tbody>
         <tfoot>
             <tr class="totals-row">
-                <td colspan="4">Total Items: {{ total_items }}</td>
+                <td colspan="6">Total Items: {{ total_items }}</td>
+                <td>{{ total_available }}</td>
+                <td>{{ total_sold }}</td>
+                <td>{{ total_units }}</td>
                 <td class="price-col">${{ "%.2f"|format(total_price or 0) }}</td>
-                <td colspan="2"></td>
             </tr>
         </tfoot>
     </table>

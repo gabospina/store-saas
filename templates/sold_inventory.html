@@ -1,27 +1,106 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sold Inventory</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+    /* Page-local styles for the grouped sold layout */
+    .sold-product-card {
+        background: #fff;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
 
-    <link
-        rel="stylesheet"
-        href="{{ url_for(
-            'static',
-            filename='css/style.css'
-        ) }}">
+    /* Photo + body side-by-side */
+    .sold-product-layout {
+        display: flex;
+        gap: 20px;
+        align-items: flex-start;
+    }
+    .sold-product-photo {
+        flex: 0 0 140px;
+        width: 140px;
+        height: 140px;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #f0f0f0;
+    }
+    .sold-product-photo img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .sold-product-body {
+        flex: 1;
+        min-width: 0;    /* allows sales table to shrink on narrow screens */
+    }
+    .sold-product-body h3 { margin: 0 0 8px; }
 
+    .sold-product-meta {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px 16px;
+        margin-bottom: 14px;
+        font-size: 0.9rem;
+    }
+    .sold-product-meta p { margin: 0; }
+
+    .sales-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+    .sales-table th, .sales-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #eee;
+        text-align: left;
+    }
+    .sales-table th {
+        background: #f7f7f7;
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #555;
+    }
+    .sales-table tr:last-child td { border-bottom: none; }
+
+    .sold-actions { margin-top: 12px; display: flex; gap: 10px; }
+    .btn-sm {
+        background: #ff6600; color: #fff; border: none;
+        padding: 6px 12px; border-radius: 5px; cursor: pointer;
+        font-size: 0.85rem; font-weight: 600;
+    }
+    .btn-sm:hover { background: #e65c00; }
+    .btn-sm.gray { background: #6c757d; }
+    .btn-sm.gray:hover { background: #565e64; }
+
+    /* Stack vertically on small screens */
+    @media (max-width: 640px) {
+        .sold-product-layout { flex-direction: column; }
+        .sold-product-photo {
+            width: 100%;
+            height: 200px;
+            flex: none;
+        }
+    }
+    </style>
 </head>
-
 <body>
-
 <div class="container">
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for msg in messages %}
+          <div class="flash-msg">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
     <div class="dashboard-header">
         <h1>Sold Inventory</h1>
@@ -33,100 +112,98 @@
 
     {% if inventory %}
 
-        <div class="inventory-grid">
+        {% for product in inventory %}
+        <div class="sold-product-card">
 
-            {% for item in inventory %}
+            <div class="sold-product-layout">
 
-            <div class="inventory-item">
+                <!-- ─────────── Product photo ─────────── -->
+                <div class="sold-product-photo">
+                    {% if product.photo and product.photo != 'no-image.png' %}
+                        {# Derive thumbnail name from full filename:
+                           "abc.jpg" → "abc_thumb.jpg" (thumbs are always .jpg) #}
+                        {% set base = product.photo.rsplit('.', 1)[0] %}
+                        {% set thumb_name = base + '_thumb.jpg' %}
+                        <img
+                            src="{{ url_for('static', filename='images/uploads/thumbs/' + thumb_name) }}"
+                            data-fallback="{{ url_for('static', filename='images/uploads/' + product.photo) }}"
+                            data-placeholder="{{ url_for('static', filename='images/no-image.png') }}"
+                            onerror="if(!this.dataset.triedFallback){this.dataset.triedFallback='1';this.src=this.dataset.fallback;}else{this.onerror=null;this.src=this.dataset.placeholder;}"
+                            alt="{{ product.product_name }}">
+                    {% else %}
+                        <img
+                            src="{{ url_for('static', filename='images/no-image.png') }}"
+                            alt="No image">
+                    {% endif %}
+                </div>
 
-                {% if item[7] == 'no-image.png' %}
+                <!-- ─────────── Product info + sales table ─────────── -->
+                <div class="sold-product-body">
 
-                    <img
-                    src="{{ url_for(
-                        'static',
-                        filename='images/no-image.png'
-                    ) }}"
-                    alt="No Image">
+                    <h3>{{ product.product_name }}</h3>
 
-                {% else %}
-
-                    <img
-                    src="{{ url_for(
-                        'static',
-                        filename='images/uploads/' + item[7]
-                    ) }}"
-                    alt="{{ item[1] }}">
-
-                {% endif %}
-
-                <div class="inventory-content">
-
-                    <div class="category-badge">
-                        {{ item[5] }}
+                    <div class="sold-product-meta">
+                        <p><strong>Brand:</strong> {{ product.brand or '—' }}</p>
+                        <p><strong>Model:</strong> {{ product.model or '—' }}</p>
+                        <p><strong>Category:</strong> {{ product.category or '—' }}</p>
+                        <p><strong>Unit Price:</strong> ${{ '%.2f'|format(product.price or 0) }}</p>
+                        <p><strong>Total Sales:</strong> {{ product.total_sales }}</p>
+                        <p><strong>Total Revenue:</strong>
+                            ${{ '%.2f'|format((product.price or 0) * product.total_sales) }}</p>
+                        <p><strong>Last Sale:</strong> {{ product.last_sale_at }}</p>
                     </div>
 
-                    <h3>{{ item[1] }}</h3>
+                    <table class="sales-table">
+                        <thead>
+                            <tr>
+                                <th>Sale #</th>
+                                <th>Sold At</th>
+                                <th>Price</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sale in product.sales %}
+                            <tr>
+                                <td>#{{ sale[0] }}</td>
+                                <td>{{ sale[1] }}</td>
+                                <td>${{ '%.2f'|format(sale[2] or 0) }}</td>
+                                <td>
+                                    <form method="POST"
+                                          action="/restore-sale/{{ sale[0] }}"
+                                          onsubmit="return confirm('Restore this sale back to available inventory?');"
+                                          style="display:inline;">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="btn-sm">Restore This</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
 
-                    <p>
-                        <strong>Brand:</strong>
-                        {{ item[2] }}
-                    </p>
-
-                    <p>
-                        <strong>Model:</strong>
-                        {{ item[3] }}
-                    </p>
-
-                    <p>
-                        <strong>Price:</strong>
-                        ${{ item[4] }}
-                    </p>
-
-                    <p>
-                        <strong>Condition:</strong>
-                        {{ item[6] }}
-                    </p>
-
-                    <p>
-                        <strong>Status:</strong>
-                        {{ item[8] }}
-                    </p>
-
-                    <p>
-                        <strong>Sold Date:</strong>
-                        {{ item[9] }}
-                    </p>
-
-                    <form
-                        method="POST"
-                        action="/restore/{{ item[0] }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button
-                            class="restore-btn"
-                            type="submit">
-
-                            Restore
-
-                        </button>
-
-                    </form>
+                    <div class="sold-actions">
+                        <form method="POST"
+                              action="/restore/{{ product.inventory_id }}"
+                              onsubmit="return confirm('Restore ALL {{ product.total_sales }} sales of this product?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn-sm gray">
+                                Restore All ({{ product.total_sales }})
+                            </button>
+                        </form>
+                    </div>
 
                 </div>
 
             </div>
 
-            {% endfor %}
-
         </div>
+        {% endfor %}
 
     {% else %}
-
         <p>No sold products found.</p>
-
     {% endif %}
 
 </div>
-
 </body>
-
 </html>
